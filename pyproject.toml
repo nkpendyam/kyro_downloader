@@ -34,8 +34,8 @@ dev = ["pytest", "pytest-cov", "pytest-asyncio", "pytest-mock", "ruff", "mypy", 
 
 [project.scripts]
 kyro = "src.cli.__main__:main"
-kyro-tui = "src.ui.tui:run_tui"
-kyro-web = "src.ui.web.server:run_web"
+kyro-tui = "src.ui.tui:main"
+kyro-web = "src.ui.web.server:main"
 kyro-gui = "src.gui.gui_main:main"
 
 [tool.setuptools.packages.find]

@@ -9,6 +9,11 @@ from tkinter import filedialog
 
 import customtkinter as ctk
 
+# Backward-compatible alias for legacy widget namespace usage.
+# Some UI code still references ctk.ctk.CTk* and ctk.ctk.ctk.CTk* forms.
+if not hasattr(ctk, "ctk"):
+    ctk.ctk = ctk
+
 from src import __version__
 from src.config.manager import load_config, save_config
 from src.core.download_manager import DownloadManager
