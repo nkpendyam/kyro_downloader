@@ -12,8 +12,9 @@ services:
       - ../config:/app/config
       - ../logs:/app/logs
     environment:
-      - KYRO_WEB_HOST=0.0.0.0
-      - KYRO_WEB_PORT=8000
+      - KYRO_WEB__HOST=0.0.0.0
+      - KYRO_WEB__PORT=8000
+      - KYRO_WEB__DEBUG=false
       - KYRO_GENERAL__LOG_LEVEL=INFO
     restart: unless-stopped
     healthcheck:

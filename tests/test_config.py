@@ -1,4 +1,5 @@
 """Tests for config module."""
+
 import os
 import pytest
 from src.config.manager import load_config, save_config, get_default_config_path, deep_merge, find_config_file
@@ -51,6 +52,7 @@ class TestConfigManager:
 
     def test_find_config_file_not_found(self, tmp_path):
         import src.config.manager as mgr
+
         original = mgr.CONFIG_DIRS
         mgr.CONFIG_DIRS = [tmp_path]
         try:
@@ -58,6 +60,18 @@ class TestConfigManager:
             assert result is None
         finally:
             mgr.CONFIG_DIRS = original
+
+    def test_load_env_config_nested_double_underscore(self, monkeypatch):
+        monkeypatch.setenv("KYRO_WEB__HOST", "0.0.0.0")
+        monkeypatch.setenv("KYRO_WEB__PORT", "9000")
+        config = load_config()
+        assert config.web.host == "0.0.0.0"
+        assert config.web.port == 9000
+
+    def test_load_env_config_single_underscore_not_nested(self, monkeypatch):
+        monkeypatch.setenv("KYRO_WEB_HOST", "0.0.0.0")
+        config = load_config()
+        assert config.web.host == DEFAULT_CONFIG["web"]["host"]
 
 
 class TestConfigSchema:
@@ -69,7 +83,7 @@ class TestConfigSchema:
     def test_custom_config(self):
         config = AppConfig(
             general={"output_path": "/custom", "notifications": False},
-            download={"max_retries": 10, "concurrent_workers": 8}
+            download={"max_retries": 10, "concurrent_workers": 8},
         )
         assert config.general.output_path == "/custom"
         assert config.download.max_retries == 10

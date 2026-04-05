@@ -8,6 +8,16 @@ kyro web --port 9000  # Custom port
 
 ## REST Endpoints
 
+## Authentication
+
+When `web.api_token` is configured, all `/api/*` endpoints require authentication.
+
+Supported auth methods:
+- `Authorization: Bearer <token>`
+- `X-API-Token: <token>`
+
+Without a valid token, API requests return `401 Unauthorized`.
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/status` | Server status |
@@ -80,6 +90,12 @@ kyro web --port 9000  # Custom port
 ## WebSocket
 - `GET /ws/progress` - Real-time download progress updates
 - `GET /ws/queue` - Real-time queue status updates
+
+When `web.api_token` is configured, websocket connections also require auth.
+You can pass token using:
+- `Authorization: Bearer <token>` header
+- `X-API-Token: <token>` header
+- `?token=<token>` query parameter
 
 WebSocket clients can send:
 - `{"type":"subscribe"}` to confirm a progress subscription

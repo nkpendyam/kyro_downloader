@@ -1,6 +1,8 @@
 """Configuration validation schema using pydantic."""
+
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
+
 
 class GeneralConfig(BaseModel):
     output_path: str = "./downloads"
@@ -9,13 +11,16 @@ class GeneralConfig(BaseModel):
     notifications: bool = True
     auto_update: bool = True
     check_duplicates: bool = True
+
     @field_validator("log_level")
     @classmethod
     def validate_log_level(cls, v):
         allowed = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
         v = v.upper()
-        if v not in allowed: raise ValueError(f"log_level must be one of {allowed}")
+        if v not in allowed:
+            raise ValueError(f"log_level must be one of {allowed}")
         return v
+
 
 class DownloadConfig(BaseModel):
     max_retries: int = Field(default=3, ge=0, le=20)
@@ -29,11 +34,14 @@ class DownloadConfig(BaseModel):
     timeout: int = Field(default=300, ge=30)
     fragment_retries: int = Field(default=10, ge=0)
     concurrent_fragment_downloads: int = Field(default=4, ge=1)
+
     @field_validator("retry_backoff")
     @classmethod
     def validate_backoff(cls, v):
-        if v not in {"exponential", "linear", "fixed"}: raise ValueError("retry_backoff must be exponential, linear, or fixed")
+        if v not in {"exponential", "linear", "fixed"}:
+            raise ValueError("retry_backoff must be exponential, linear, or fixed")
         return v
+
 
 class VideoConfig(BaseModel):
     default_quality: str = "best"
@@ -43,11 +51,13 @@ class VideoConfig(BaseModel):
     embed_metadata: bool = True
     embed_subtitles: bool = False
 
+
 class AudioConfig(BaseModel):
     format: str = "mp3"
     quality: str = "192"
     embed_thumbnail: bool = True
     embed_metadata: bool = True
+
 
 class PlaylistConfig(BaseModel):
     concurrent_downloads: int = Field(default=3, ge=1, le=10)
@@ -57,6 +67,7 @@ class PlaylistConfig(BaseModel):
     playlist_reverse: bool = False
     playlist_random: bool = False
 
+
 class SubtitleConfig(BaseModel):
     enabled: bool = False
     languages: list[str] = ["en"]
@@ -64,10 +75,12 @@ class SubtitleConfig(BaseModel):
     auto_generated: bool = True
     format: str = "srt"
 
+
 class SponsorBlockConfig(BaseModel):
     enabled: bool = False
     categories: list[str] = ["sponsor", "intro", "outro", "selfpromo"]
     api_url: str = "https://sponsor.ajay.app"
+
 
 class CloudConfig(BaseModel):
     enabled: bool = False
@@ -76,6 +89,7 @@ class CloudConfig(BaseModel):
     region: Optional[str] = None
     credentials_file: Optional[str] = None
 
+
 class UIConfig(BaseModel):
     theme: str = "dark"
     show_banner: bool = True
@@ -83,12 +97,14 @@ class UIConfig(BaseModel):
     show_format_table: bool = True
     progress_bar: str = "rich"
 
+
 class WebConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
     debug: bool = False
-    cors_origins: list[str] = []
+    cors_origins: list[str] = Field(default_factory=lambda: ["*"])
     api_token: Optional[str] = None
+
 
 class AppConfig(BaseModel):
     general: GeneralConfig = Field(default_factory=GeneralConfig)

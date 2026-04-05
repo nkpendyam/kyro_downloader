@@ -105,6 +105,7 @@ a = Analysis(
         'src.plugins.builtin.auto_compress',
         'src.plugins.builtin.auto_convert',
         'src.plugins.builtin.auto_organize',
+        'src.plugins.builtin.auto_thumbnail',
         'src.plugins.builtin.subtitle_auto',
         # Third-party
         'customtkinter',

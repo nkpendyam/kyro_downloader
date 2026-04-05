@@ -14,12 +14,12 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /app /app
 RUN mkdir -p /app/downloads /app/logs /app/config && chown -R kyro:kyro /app
 VOLUME ["/app/downloads", "/app/config", "/app/logs"]
-ENV KYRO_WEB_HOST=0.0.0.0
-ENV KYRO_WEB_PORT=8000
+ENV KYRO_WEB__HOST=0.0.0.0
+ENV KYRO_WEB__PORT=8000
 ENV PYTHONUNBUFFERED=1
 ENV PATH="/usr/local/bin:$PATH"
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 CMD curl -f http://localhost:8000/health || exit 1
 USER kyro
-ENTRYPOINT ["python", "-m", "src.cli"]
-CMD ["--help"]
+ENTRYPOINT ["python", "-m", "src.main"]
+CMD ["--ui", "web", "--host", "0.0.0.0", "--port", "8000"]

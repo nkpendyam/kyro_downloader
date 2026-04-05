@@ -150,6 +150,7 @@ jobs:
             --hidden-import=src.plugins.builtin.auto_compress \
             --hidden-import=src.plugins.builtin.auto_convert \
             --hidden-import=src.plugins.builtin.auto_organize \
+            --hidden-import=src.plugins.builtin.auto_thumbnail \
             --hidden-import=src.plugins.builtin.subtitle_auto \
             --collect-all customtkinter \
             --collect-all darkdetect \
@@ -280,6 +281,7 @@ jobs:
             --hidden-import=src.plugins.builtin.auto_compress \
             --hidden-import=src.plugins.builtin.auto_convert \
             --hidden-import=src.plugins.builtin.auto_organize \
+            --hidden-import=src.plugins.builtin.auto_thumbnail \
             --hidden-import=src.plugins.builtin.subtitle_auto \
             --collect-all customtkinter \
             --collect-all darkdetect \

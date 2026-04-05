@@ -14,6 +14,7 @@ download:
   rate_limit: null
   proxy: null
   cookies_file: null
+  cookies_from_browser: null
   timeout: 300
   fragment_retries: 10
   concurrent_fragment_downloads: 4
@@ -21,8 +22,10 @@ download:
 video:
   default_quality: "best"
   prefer_format: "mp4"
+  merge_output_format: "mp4"
   embed_thumbnail: true
   embed_metadata: true
+  embed_subtitles: false
 
 audio:
   format: "mp3"
@@ -34,6 +37,9 @@ playlist:
   concurrent_downloads: 3
   sleep_interval: 0
   max_downloads: null
+  autonumber_start: 1
+  playlist_reverse: false
+  playlist_random: false
 
 subtitles:
   enabled: false
@@ -45,19 +51,25 @@ subtitles:
 sponsorblock:
   enabled: false
   categories: ["sponsor", "intro", "outro", "selfpromo"]
+  api_url: "https://sponsor.ajay.app"
 
 cloud:
   enabled: false
   provider: null
   bucket: null
+  region: null
+  credentials_file: null
 
 ui:
   theme: "dark"
   show_banner: true
   show_thumbnail: true
+  show_format_table: true
+  progress_bar: "rich"
 
 web:
   host: "127.0.0.1"
   port: 8000
   debug: false
   cors_origins: ["*"]
+  api_token: null
