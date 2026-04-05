@@ -21,6 +21,7 @@ from src.core.downloader import get_video_info, list_video_formats, build_smart_
 from src.utils.validation import validate_url, validate_output_path, validate_integer, validate_batch_file
 from src.utils.platform import normalize_url, get_platform_info, get_supported_platforms
 from src.utils.ytdlp_updater import update_ytdlp, auto_update_on_startup
+from src.utils.logger import setup_logger
 from src.services.presets import apply_preset_config
 from src.services.thumbnails import show_thumbnail_inline
 from src.services.sponsorblock import extract_video_id, get_segments, format_segments_for_display
@@ -355,6 +356,9 @@ def cmd_download(args, config):
         cfg["cookies_from_browser"] = args.cookies_from_browser
     if args.rate_limit:
         cfg["rate_limit"] = args.rate_limit
+    if getattr(args, "no_notify", False):
+        cfg["notifications"] = False
+        cfg["no_notify"] = True
     if args.sponsorblock:
         cfg["sponsorblock"] = {"enabled": True}
     subtitles_cfg = _build_subtitles_config(args)
@@ -827,6 +831,8 @@ def main():
     except Exception as e:
         print(f"[bold red]Config error: {e}[/bold red]")
         config = AppConfig()
+    log_level = "DEBUG" if getattr(args, "verbose", False) else config.general.log_level
+    setup_logger(log_level=log_level, log_file=config.general.log_file)
     if getattr(config.general, "auto_update", False) and not os.environ.get("PYTEST_CURRENT_TEST") and not args.update:
         auto_update_on_startup(check_only=False)
     if args.update:
