@@ -1,22 +1,48 @@
 """Geo-restriction bypass service."""
 
+import os
 import requests
 from src.utils.logger import get_logger
+
 logger = get_logger(__name__)
 
 COUNTRY_CODES = {
-    "US": "United States", "GB": "United Kingdom", "CA": "Canada", "AU": "Australia",
-    "DE": "Germany", "FR": "France", "JP": "Japan", "KR": "South Korea",
-    "IN": "India", "BR": "Brazil", "MX": "Mexico", "RU": "Russia",
-    "CN": "China", "IT": "Italy", "ES": "Spain", "NL": "Netherlands",
-    "SE": "Sweden", "NO": "Norway", "DK": "Denmark", "FI": "Finland",
+    "US": "United States",
+    "GB": "United Kingdom",
+    "CA": "Canada",
+    "AU": "Australia",
+    "DE": "Germany",
+    "FR": "France",
+    "JP": "Japan",
+    "KR": "South Korea",
+    "IN": "India",
+    "BR": "Brazil",
+    "MX": "Mexico",
+    "RU": "Russia",
+    "CN": "China",
+    "IT": "Italy",
+    "ES": "Spain",
+    "NL": "Netherlands",
+    "SE": "Sweden",
+    "NO": "Norway",
+    "DK": "Denmark",
+    "FI": "Finland",
 }
 
+PROXY_MAP = {
+    "US": "http://us-proxy.example.com:8080",
+    "GB": "http://gb-proxy.example.com:8080",
+    "DE": "http://de-proxy.example.com:8080",
+    "JP": "http://jp-proxy.example.com:8080",
+}
+
+
 def get_proxy_for_country(country_code: str) -> str | None:
-    proxy_url = __import__("os").environ.get("KYRO_PROXY_URL")
+    proxy_url = os.environ.get("KYRO_PROXY_URL")
     if proxy_url:
         return proxy_url
-    return None
+    return PROXY_MAP.get(country_code.upper())
+
 
 def build_geo_opts(proxy_url: str | None = None, geo_bypass_country: str | None = None) -> dict[str, str]:
     opts: dict[str, str] = {}
@@ -25,6 +51,7 @@ def build_geo_opts(proxy_url: str | None = None, geo_bypass_country: str | None 
     if geo_bypass_country and geo_bypass_country in COUNTRY_CODES:
         opts["geo_bypass_country"] = geo_bypass_country
     return opts
+
 
 def check_geo_restriction(url: str, country_code: str | None = None) -> bool:
     try:

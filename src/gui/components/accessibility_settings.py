@@ -1,4 +1,5 @@
 """Accessibility settings component for Desktop GUI."""
+
 import json
 from pathlib import Path
 
@@ -144,8 +145,6 @@ class AccessibilitySettings:
                 app.theme_mode = "dark"
             except Exception:
                 pass
-        if self.has_large_buttons():
-            pass
         return {
             "font_size": font_size,
             "colors": colors,

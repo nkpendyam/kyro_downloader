@@ -1,7 +1,12 @@
 """Tests for platform utilities."""
+
 from src.utils.platform import (
-    get_platform_info, detect_content_type, is_playlist_url,
-    is_story_url, normalize_url, get_supported_platforms,
+    get_platform_info,
+    detect_content_type,
+    is_playlist_url,
+    is_story_url,
+    normalize_url,
+    get_supported_platforms,
     build_quality_preset,
 )
 
@@ -103,11 +108,11 @@ class TestBuildQualityPreset:
 
     def test_hdr(self):
         preset = build_quality_preset("1080p", hdr=True)
-        assert "337" in preset or "315" in preset
+        assert "dynamic_range=HDR10" in preset or "HLG" in preset or "DV" in preset
 
     def test_dolby(self):
         preset = build_quality_preset("1080p", dolby=True)
-        assert "258" in preset or "257" in preset
+        assert "acodec^=ec-3" in preset or "ac-3" in preset
 
     def test_default(self):
         preset = build_quality_preset("unknown")

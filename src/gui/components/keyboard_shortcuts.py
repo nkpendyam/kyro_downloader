@@ -1,6 +1,4 @@
 """Keyboard shortcuts handler."""
-from src.utils.logger import get_logger
-logger = get_logger(__name__)
 
 SHORTCUTS = {
     "Ctrl+N": "new_download",
@@ -18,6 +16,7 @@ SHORTCUTS = {
     "Delete": "delete_selected",
     "Enter": "start_download",
 }
+
 
 class KeyboardShortcuts:
     def __init__(self, handlers=None):

@@ -4,7 +4,9 @@ import subprocess
 from pathlib import Path
 from src.utils.logger import get_logger
 from src.utils.ffmpeg import check_ffmpeg
+
 logger = get_logger(__name__)
+
 
 def download_livestream(url: str, output_path: str | Path, from_start: bool = False) -> str | None:
     if not check_ffmpeg():
@@ -13,6 +15,7 @@ def download_livestream(url: str, output_path: str | Path, from_start: bool = Fa
     output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
     import yt_dlp
+
     ydl_opts = {
         "outtmpl": str(output_path / "%(title)s.%(ext)s"),
         "format": "bestvideo+bestaudio/best",
@@ -28,6 +31,7 @@ def download_livestream(url: str, output_path: str | Path, from_start: bool = Fa
         logger.error(f"Livestream download failed: {e}")
         return None
 
+
 def record_livestream_ffmpeg(url: str, output_path: str | Path, timeout: int = 3600) -> str | None:
     """Record livestream using yt-dlp piped to ffmpeg.
 
@@ -41,7 +45,7 @@ def record_livestream_ffmpeg(url: str, output_path: str | Path, timeout: int = 3
     ytdlp_cmd = ["yt-dlp", "-o", "-", "-f", "best", "--no-playlist", url]
     ffmpeg_cmd = ["ffmpeg", "-y", "-i", "pipe:0", "-c", "copy", str(output_path)]
     try:
-        ytdlp_proc = subprocess.Popen(ytdlp_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        ytdlp_proc = subprocess.Popen(ytdlp_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         ffmpeg_proc = subprocess.run(
             ffmpeg_cmd,
             stdin=ytdlp_proc.stdout,

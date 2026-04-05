@@ -6,9 +6,11 @@ from datetime import datetime
 from src.services.statistics import StatsTracker
 from src.services.archive import DownloadArchive
 from src.utils.logger import get_logger
+
 logger = get_logger(__name__)
 
 REPORTS_DIR = Path.home() / ".config" / "kyro" / "reports"
+
 
 def generate_html_report(output_path: str | None = None, days: int = 30) -> str:
     """Generate an HTML report of download history."""
@@ -17,7 +19,11 @@ def generate_html_report(output_path: str | None = None, days: int = 30) -> str:
     entries = archive.list_all()
 
     cutoff = datetime.now().timestamp() - (days * 86400)
-    recent = [e for e in entries if e.get("timestamp", "")[:10] >= datetime.fromtimestamp(cutoff).strftime("%Y-%m-%d")]
+    recent = [
+        e
+        for e in entries
+        if e.get("downloaded_at", e.get("timestamp", ""))[:10] >= datetime.fromtimestamp(cutoff).strftime("%Y-%m-%d")
+    ]
 
     stats_data = stats.get_summary()
 
@@ -41,10 +47,17 @@ th {{ background: #16213e; }}
     for key, value in stats_data.items():
         report_html += f'<div class="stat"><h3>{html.escape(key.replace("_", " ").title())}</h3><p>{html.escape(str(value))}</p></div>\n'
 
-    report_html += '</div><h2>Recent Downloads</h2><table><tr><th>Status</th><th>Title</th><th>Date</th><th>Size</th></tr>\n'
+    report_html += (
+        "</div><h2>Recent Downloads</h2><table><tr><th>Status</th><th>Title</th><th>Date</th><th>Size</th></tr>\n"
+    )
     for entry in recent[:100]:
-        report_html += f'<tr><td>{html.escape(entry.get("status", "?"))}</td><td>{html.escape(entry.get("title", "Unknown"))}</td><td>{html.escape(entry.get("timestamp", "")[:19])}</td><td>{html.escape(entry.get("size", "?"))}</td></tr>\n'
-    report_html += '</table></body></html>'
+        status = entry.get("status", "completed")
+        title = entry.get("title", "Unknown")
+        ts = entry.get("downloaded_at", entry.get("timestamp", ""))[:19]
+        size_raw = entry.get("size", 0)
+        size_str = f"{size_raw / (1024 * 1024):.1f}MB" if isinstance(size_raw, (int, float)) and size_raw > 0 else "?"
+        report_html += f"<tr><td>{html.escape(str(status))}</td><td>{html.escape(str(title))}</td><td>{html.escape(ts)}</td><td>{html.escape(size_str)}</td></tr>\n"
+    report_html += "</table></body></html>"
 
     if not output_path:
         REPORTS_DIR.mkdir(parents=True, exist_ok=True)

@@ -1,9 +1,12 @@
 """Category manager - organize downloads by category."""
+
 from typing import Any
 
+import copy
 import json
 from pathlib import Path
 from src.utils.logger import get_logger
+
 logger = get_logger(__name__)
 
 CATEGORIES_FILE = Path.home() / ".config" / "kyro" / "categories.json"
@@ -12,12 +15,13 @@ DEFAULT_CATEGORIES = {
     "Music": {"patterns": ["music", "song", "audio", "track", "album"], "folder": "Music"},
     "Education": {"patterns": ["tutorial", "course", "lecture", "learn", "teach"], "folder": "Education"},
     "Entertainment": {"patterns": ["comedy", "funny", "entertainment", "show"], "folder": "Entertainment"},
-    "Gaming": {"patterns": ["game", "gaming", "gameplay", "walkthrough"], "folder": "Gaming"},
+    "Gaming": {"patterns": ["gaming", "gameplay", "walkthrough"], "folder": "Gaming"},
     "News": {"patterns": ["news", "report", "breaking"], "folder": "News"},
     "Sports": {"patterns": ["sport", "match", "game", "highlight"], "folder": "Sports"},
     "Technology": {"patterns": ["tech", "review", "unboxing", "how-to"], "folder": "Technology"},
     "Other": {"patterns": [], "folder": "Other"},
 }
+
 
 class CategoryManager:
     def __init__(self) -> None:
@@ -31,7 +35,7 @@ class CategoryManager:
                     return json.load(f)
             except (json.JSONDecodeError, IOError):
                 pass
-        return DEFAULT_CATEGORIES.copy()
+        return copy.deepcopy(DEFAULT_CATEGORIES)
 
     def _save(self) -> None:
         try:

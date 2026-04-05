@@ -6,12 +6,19 @@ class StatsCharts:
         self._data = []
 
     def add_data_point(self, date_str, downloads=0, bytes_downloaded=0, failed=0):
-        self._data.append({
-            "date": date_str,
-            "downloads": downloads,
-            "bytes": bytes_downloaded,
-            "failed": failed,
-        })
+        """Record a daily data point for trend visualization."""
+        self._data.append(
+            {
+                "date": date_str,
+                "downloads": downloads,
+                "bytes": bytes_downloaded,
+                "failed": failed,
+            }
+        )
+
+    def get_data_points(self):
+        """Return all recorded data points."""
+        return list(self._data)
 
     def get_daily_summary(self, stats_dict):
         lines = []
@@ -24,7 +31,7 @@ class StatsCharts:
         lines.append(f"Total Downloads: {total}")
         lines.append(f"Failed: {failed}")
         lines.append(f"Success Rate: {success_rate:.1f}%")
-        lines.append(f"Total Data: {total_bytes / (1024*1024*1024):.2f} GB")
+        lines.append(f"Total Data: {total_bytes / (1024 * 1024 * 1024):.2f} GB")
         lines.append(f"Avg Speed: {avg_speed:.2f} Mbps")
         return "\n".join(lines)
 
