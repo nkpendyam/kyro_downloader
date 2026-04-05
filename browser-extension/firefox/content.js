@@ -34,10 +34,14 @@
 
   async function sendToKyro(url) {
     try {
-      const response = await fetch(`${KYRO_API_URL}/api/queue`, {
+      const response = await fetch(`${KYRO_API_URL}/api/download`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({
+          url,
+          only_audio: false,
+          priority: "normal",
+        }),
       });
       if (response.ok) {
         showToast("Queued in Kyro: " + url.substring(0, 50) + "...");

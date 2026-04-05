@@ -73,21 +73,61 @@ class DownloadRequest(BaseModel):
     output_path: Optional[str] = Field(default=None, max_length=512)
     format_id: Optional[str] = Field(default=None, max_length=64)
     only_audio: bool = False
+    quality: str = "best"
+    hdr: bool = False
+    dolby: bool = False
     audio_format: str = "mp3"
     audio_quality: str = "192"
+    audio_selector: Optional[str] = Field(default=None, max_length=128)
     priority: str = "normal"
-    subtitles: bool = False
+    subtitles: bool | dict = False
     sponsorblock: bool = False
+    preset: str = "none"
+    output_template: Optional[str] = Field(default=None, max_length=256)
 
 class BatchRequest(BaseModel):
     urls: list[str] = Field(max_length=100)
     output_path: Optional[str] = Field(default=None, max_length=512)
     only_audio: bool = False
+    quality: str = "best"
+    hdr: bool = False
+    dolby: bool = False
+    audio_format: str = "mp3"
+    audio_quality: str = "192"
+    audio_selector: Optional[str] = Field(default=None, max_length=128)
+    subtitles: bool | dict = False
+    sponsorblock: bool = False
+    output_template: Optional[str] = Field(default=None, max_length=256)
     workers: int = 3
 
 class PlaylistRequest(BaseModel):
     url: str = Field(max_length=2048)
     output_path: Optional[str] = Field(default=None, max_length=512)
+    only_audio: bool = False
+    quality: str = "best"
+    hdr: bool = False
+    dolby: bool = False
+    audio_format: str = "mp3"
+    audio_quality: str = "192"
+    audio_selector: Optional[str] = Field(default=None, max_length=128)
+    subtitles: bool | dict = False
+    sponsorblock: bool = False
+    output_template: Optional[str] = Field(default=None, max_length=256)
+
+
+def _resolve_subtitles_request(subtitles):
+    """Normalize bool/dict subtitle payloads into downloader config."""
+    if isinstance(subtitles, dict):
+        return subtitles
+    if subtitles:
+        return {
+            "enabled": True,
+            "languages": ["en"],
+            "embed": False,
+            "auto_generated": True,
+            "format": "srt",
+        }
+    return None
 
 class ConfigUpdate(BaseModel):
     section: str = Field(max_length=64)
@@ -106,7 +146,24 @@ async def queue_download(req: DownloadRequest):
     _safe_output_path(output, output_base)
     priority_map = {"low": Priority.LOW, "normal": Priority.NORMAL, "high": Priority.HIGH, "critical": Priority.CRITICAL}
     priority = priority_map.get(req.priority, Priority.NORMAL)
-    item = manager.queue_download(url=url, output_path=str(output), format_id=req.format_id, only_audio=req.only_audio, priority=priority)
+    subtitles_cfg = _resolve_subtitles_request(req.subtitles)
+    sponsorblock_cfg = {"enabled": True} if req.sponsorblock else None
+    item = manager.queue_download(
+        url=url,
+        output_path=str(output),
+        format_id=req.format_id,
+        only_audio=req.only_audio,
+        priority=priority,
+        quality=req.quality,
+        hdr=req.hdr,
+        dolby=req.dolby,
+        audio_format=req.audio_format,
+        audio_quality=req.audio_quality,
+        audio_selector=req.audio_selector,
+        subtitles=subtitles_cfg,
+        sponsorblock=sponsorblock_cfg,
+        output_template=req.output_template,
+    )
     _ensure_executor_running()
     return {"task_id": item.task_id, "url": item.url, "status": item.status.value, "message": "Download queued successfully"}
 
@@ -118,10 +175,25 @@ async def batch_download(req: BatchRequest):
     output = validate_output_path(req.output_path or output_base)
     _safe_output_path(output, output_base)
     items = []
+    subtitles_cfg = _resolve_subtitles_request(req.subtitles)
+    sponsorblock_cfg = {"enabled": True} if req.sponsorblock else None
     for url in req.urls:
         url = normalize_url(url)
         if validate_url(url):
-            item = manager.queue_download(url=url, output_path=str(output), only_audio=req.only_audio)
+            item = manager.queue_download(
+                url=url,
+                output_path=str(output),
+                only_audio=req.only_audio,
+                quality=req.quality,
+                hdr=req.hdr,
+                dolby=req.dolby,
+                audio_format=req.audio_format,
+                audio_quality=req.audio_quality,
+                audio_selector=req.audio_selector,
+                subtitles=subtitles_cfg,
+                sponsorblock=sponsorblock_cfg,
+                output_template=req.output_template,
+            )
             items.append({"task_id": item.task_id, "url": item.url})
     manager.config["concurrent_workers"] = req.workers
     _ensure_executor_running()
@@ -137,7 +209,24 @@ async def download_playlist_req(req: PlaylistRequest):
     output_base = cfg.general.output_path
     output = validate_output_path(req.output_path or output_base)
     _safe_output_path(output, output_base)
-    _executor.submit(manager.download_playlist, url, str(output))
+    subtitles_cfg = _resolve_subtitles_request(req.subtitles)
+    sponsorblock_cfg = {"enabled": True} if req.sponsorblock else None
+    _executor.submit(
+        manager.download_playlist,
+        url,
+        str(output),
+        None,
+        req.only_audio,
+        req.quality,
+        req.hdr,
+        req.dolby,
+        req.audio_format,
+        req.audio_quality,
+        req.audio_selector,
+        subtitles_cfg,
+        sponsorblock_cfg,
+        req.output_template,
+    )
     return {"message": "Playlist download started in background"}
 
 @router.get("/status")

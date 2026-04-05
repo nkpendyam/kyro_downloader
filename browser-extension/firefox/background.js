@@ -26,10 +26,18 @@ browser.contextMenus.onClicked.addListener((info, tab) => {
 
 async function sendToKyro(url, options) {
   try {
-    const response = await fetch(`${KYRO_API_URL}/api/queue`, {
+    const payload = {
+      url,
+      only_audio: options.mode === "mp3",
+      audio_format: options.mode === "mp3" ? "mp3" : "mp3",
+      audio_quality: options.mode === "mp3" ? "192" : "192",
+      priority: "normal",
+    };
+
+    const response = await fetch(`${KYRO_API_URL}/api/download`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, ...options }),
+      body: JSON.stringify(payload),
     });
     if (response.ok) {
       browser.notifications.create({

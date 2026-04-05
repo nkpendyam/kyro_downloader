@@ -59,6 +59,7 @@ def analyze_available_formats(formats):
     has_dolby = False
     audio_bitrates = set()
     audio_codecs = set()
+    audio_streams = []
 
     for f in formats:
         h = f.get("height", 0)
@@ -95,12 +96,71 @@ def analyze_available_formats(formats):
         if abr and acodec != "none":
             audio_bitrates.add(int(abr))
 
+        if acodec and acodec != "none":
+            codec_label = "unknown"
+            selector_codec = ""
+            if "opus" in acodec:
+                codec_label = "opus"
+                selector_codec = "opus"
+            elif "mp4a" in acodec or "aac" in acodec:
+                codec_label = "aac"
+                selector_codec = "mp4a"
+            elif "mp3" in acodec:
+                codec_label = "mp3"
+                selector_codec = "mp3"
+            elif "flac" in acodec:
+                codec_label = "flac"
+                selector_codec = "flac"
+            elif "vorbis" in acodec:
+                codec_label = "vorbis"
+                selector_codec = "vorbis"
+            elif "ac-3" in acodec:
+                codec_label = "ac3"
+                selector_codec = "ac-3"
+            elif "ec-3" in acodec:
+                codec_label = "eac3"
+                selector_codec = "ec-3"
+            elif "alac" in acodec:
+                codec_label = "alac"
+                selector_codec = "alac"
+            elif "wav" in acodec or "pcm" in acodec:
+                codec_label = "wav"
+                selector_codec = "pcm"
+
+            audio_streams.append(
+                {
+                    "format_id": f.get("format_id"),
+                    "codec": codec_label,
+                    "selector_codec": selector_codec,
+                    "abr": int(abr) if abr else 0,
+                    "ext": f.get("ext", ""),
+                }
+            )
+
+    deduped_streams = {}
+    for stream in audio_streams:
+        key = (
+            stream.get("codec"),
+            stream.get("abr", 0),
+            stream.get("selector_codec"),
+        )
+        existing = deduped_streams.get(key)
+        if existing is None:
+            deduped_streams[key] = stream
+        elif stream.get("format_id") and not existing.get("format_id"):
+            deduped_streams[key] = stream
+
+    sorted_streams = sorted(
+        deduped_streams.values(), key=lambda s: s.get("abr", 0), reverse=True
+    )
+
     return {
         "available_qualities": sorted(heights, reverse=True),
         "has_hdr": has_hdr,
         "has_dolby": has_dolby,
         "audio_bitrates": sorted(audio_bitrates, reverse=True),
         "audio_codecs": sorted(audio_codecs),
+        "audio_streams": sorted_streams,
     }
 
 def build_quality_labels(analysis):
@@ -117,6 +177,67 @@ def build_quality_labels(analysis):
     if not labels:
         labels.append("Best Available")
     return labels
+
+
+def build_smart_audio_options(analysis):
+    """Build dynamic audio options from source formats plus transcode presets."""
+    options = [
+        {
+            "label": "Smart Best Available (Auto)",
+            "audio_format": "mp3",
+            "audio_quality": "192",
+            "selector": "bestaudio/best",
+        }
+    ]
+
+    streams = analysis.get("audio_streams", []) if analysis else []
+    preferred_output_map = {
+        "aac": "aac",
+        "mp3": "mp3",
+        "opus": "opus",
+        "flac": "flac",
+        "vorbis": "ogg",
+        "alac": "alac",
+        "wav": "wav",
+        "ac3": "aac",
+        "eac3": "aac",
+        "unknown": "mp3",
+    }
+
+    for stream in streams:
+        codec = stream.get("codec", "unknown")
+        selector_codec = stream.get("selector_codec", "")
+        abr = stream.get("abr", 0)
+        format_id = stream.get("format_id")
+        abr_label = f"{abr} kbps" if abr else "variable bitrate"
+        source_label = f"Source {codec.upper()} {abr_label}"
+        if format_id:
+            source_label += f" ({format_id})"
+
+        selector = "bestaudio/best"
+        if selector_codec:
+            selector = f"bestaudio[acodec*={selector_codec}]/bestaudio/best"
+
+        options.append(
+            {
+                "label": source_label,
+                "audio_format": preferred_output_map.get(codec, "mp3"),
+                "audio_quality": str(abr) if abr else "192",
+                "selector": selector,
+            }
+        )
+
+    for preset_label, preset in AUDIO_QUALITY_PRESETS.items():
+        options.append(
+            {
+                "label": f"Preset {preset_label}",
+                "audio_format": preset.get("format", "mp3"),
+                "audio_quality": preset.get("abr", "192"),
+                "selector": "bestaudio/best",
+            }
+        )
+
+    return options
 
 AUDIO_QUALITY_PRESETS = {
     "64 kbps (Voice)": {"abr": "64", "format": "mp3", "description": "Voice only, smallest size"},
@@ -167,16 +288,19 @@ def list_audio_formats(formats):
     indexed.sort(key=lambda f: f.get("abr") or 0, reverse=True)
     return indexed
 
-def build_ydl_opts(output_path, format_id=None, only_audio=False, audio_format="mp3", audio_quality="192", embed_thumbnail=True, embed_metadata=True, subtitles=None, sponsorblock=None, rate_limit=None, proxy=None, cookies_file=None, progress_hook=None, playlist=False, playlist_config=None, prefer_format="mp4", fragment_retries=10, concurrent_fragments=4, hdr=False, dolby=False):
+def build_ydl_opts(output_path, format_id=None, only_audio=False, audio_format="mp3", audio_quality="192", audio_selector=None, embed_thumbnail=True, embed_metadata=True, subtitles=None, sponsorblock=None, rate_limit=None, proxy=None, cookies_file=None, progress_hook=None, playlist=False, playlist_config=None, prefer_format="mp4", fragment_retries=10, concurrent_fragments=4, hdr=False, dolby=False, output_template=None):
     os.makedirs(output_path, exist_ok=True)
     postprocessors = []
-    if only_audio:
-        postprocessors.append({"key": "FFmpegExtractAudio", "preferredcodec": audio_format, "preferredquality": audio_quality})
+    if output_template:
+        outtmpl = os.path.join(output_path, output_template)
+    elif only_audio:
         outtmpl = os.path.join(output_path, "%(title)s.%(ext)s")
     elif playlist:
         outtmpl = os.path.join(output_path, "%(playlist_title)s", "%(title)s.%(ext)s")
     else:
         outtmpl = os.path.join(output_path, "%(title)s.%(ext)s")
+    if only_audio:
+        postprocessors.append({"key": "FFmpegExtractAudio", "preferredcodec": audio_format, "preferredquality": audio_quality})
     if embed_thumbnail:
         postprocessors.append({"key": "EmbedThumbnail", "already_have_thumbnail": False})
     if embed_metadata:
@@ -203,7 +327,7 @@ def build_ydl_opts(output_path, format_id=None, only_audio=False, audio_format="
         "retry_sleep_functions": {"file_access": lambda n: min(2 ** n, 30), "http": lambda n: min(2 ** n, 30), "fragment": lambda n: min(2 ** n, 30)},
     }
     if only_audio:
-        ydl_opts["format"] = "bestaudio/best"
+        ydl_opts["format"] = audio_selector or "bestaudio/best"
         ydl_opts["postprocessor_args"]["ffmpeg"].extend(["-b:a", f"{audio_quality}k"])
         ydl_opts["writethumbnail"] = True
     else:
@@ -248,13 +372,13 @@ def download_single(url, output_path, format_id=None, only_audio=False, config=N
         hook = create_progress_hook(progress_tracker, task_id)
     ydl_opts = build_ydl_opts(
         output_path=output_path, format_id=format_id, only_audio=only_audio,
-        audio_format=cfg.get("audio_format", "mp3"), audio_quality=cfg.get("audio_quality", "192"),
+        audio_format=cfg.get("audio_format", "mp3"), audio_quality=cfg.get("audio_quality", "192"), audio_selector=cfg.get("audio_selector"),
         embed_thumbnail=cfg.get("embed_thumbnail", True), embed_metadata=cfg.get("embed_metadata", True),
         subtitles=cfg.get("subtitles"), sponsorblock=cfg.get("sponsorblock"),
         rate_limit=cfg.get("rate_limit"), proxy=cfg.get("proxy"), cookies_file=cfg.get("cookies_file"),
         progress_hook=hook, prefer_format=cfg.get("prefer_format", "mp4"),
         fragment_retries=cfg.get("fragment_retries", 10), concurrent_fragments=cfg.get("concurrent_fragments", 4),
-        hdr=cfg.get("hdr", False), dolby=cfg.get("dolby", False),
+        hdr=cfg.get("hdr", False), dolby=cfg.get("dolby", False), output_template=cfg.get("output_template"),
     )
     try:
         if platform.system() == "Windows":
@@ -285,12 +409,12 @@ def download_playlist(url, output_path, config=None, progress_tracker=None, form
     playlist_cfg = cfg.get("playlist", {})
     ydl_opts = build_ydl_opts(
         output_path=output_path, format_id=format_id, only_audio=only_audio,
-        audio_format=cfg.get("audio_format", "mp3"), audio_quality=cfg.get("audio_quality", "192"),
+        audio_format=cfg.get("audio_format", "mp3"), audio_quality=cfg.get("audio_quality", "192"), audio_selector=cfg.get("audio_selector"),
         embed_thumbnail=cfg.get("embed_thumbnail", True), embed_metadata=cfg.get("embed_metadata", True),
         subtitles=cfg.get("subtitles"), sponsorblock=cfg.get("sponsorblock"),
         rate_limit=cfg.get("rate_limit"), proxy=cfg.get("proxy"), cookies_file=cfg.get("cookies_file"),
         playlist=True, playlist_config=playlist_cfg, prefer_format=cfg.get("prefer_format", "mp4"),
-        hdr=cfg.get("hdr", False), dolby=cfg.get("dolby", False),
+        hdr=cfg.get("hdr", False), dolby=cfg.get("dolby", False), output_template=cfg.get("output_template"),
     )
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

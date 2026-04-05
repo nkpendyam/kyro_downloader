@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-04-05
+
 ### Added
+- Competitor-grade CLI presets: `voice-optimized`, `music-lossless`, `podcast-fast`
+- Preset-driven subtitle defaults and output naming template support in downloader config
+- Web API contract test suite to detect documentation/route drift in CI
 - Desktop GUI (Flet) with tags, presets, history viewer, stats charts
 - Multi-language support (25 languages)
 - Accessibility settings (font size, high contrast, color blind modes)
@@ -22,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Error recovery with history tracking
 
 ### Fixed
+- CLI strict typing issues in `tests/test_cli_main.py` (private symbol usage, unknown parameter/member types)
+- Documentation alignment for CLI preset flags and Web API endpoint contract
+- Core downloader outtmpl wiring to honor configured output templates
 - date_filter.py: corrected datebefore logic (returned True instead of False)
 - sponsorblock.py: fixed API URL (added /api path)
 - livestream.py: use yt-dlp piping for FFmpeg, fix wait_for_video format
@@ -36,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - RPM spec: wrapper script instead of broken symlink
 - Removed empty directories (dialogs, pages, widgets, scripts, systemd)
 
-## [1.0.0] - 2026-04-03
+## [0.9.0] - 2026-04-03
 
 ### Added
 - Complete modular architecture (6 packages, 50+ modules)

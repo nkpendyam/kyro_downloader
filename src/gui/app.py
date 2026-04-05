@@ -13,7 +13,7 @@ from customtkinter import CTkScrollableFrame, CTkFont, filedialog
 from src import __version__
 from src.config.manager import load_config, save_config
 from src.core.download_manager import DownloadManager
-from src.core.downloader import get_video_info, build_quality_labels, AUDIO_QUALITY_PRESETS
+from src.core.downloader import get_video_info, build_quality_labels, build_smart_audio_options
 from src.utils.validation import validate_url, validate_output_path
 from src.utils.platform import normalize_url, get_platform_info
 from src.services.statistics import StatsTracker
@@ -45,6 +45,7 @@ class KyroApp(ctk.CTk):
         self._download_cancelled = False
         self._download_start_time = None
         self._queue_refresh_timer = None
+        self._audio_options = {}
 
         # Build UI
         self._build_ui()
@@ -121,17 +122,39 @@ class KyroApp(ctk.CTk):
         self.audio_quality_frame.pack_forget()
         CTkLabel(self.audio_quality_frame, text="Audio Quality:").pack(side="left", padx=(0, 5))
         self.audio_quality_combo = CTkComboBox(self.audio_quality_frame,
-            values=["64 kbps (Voice)", "96 kbps (Low)", "128 kbps (Standard)", "160 kbps (Good)",
-                    "192 kbps (High)", "256 kbps (Very High)", "320 kbps (Best MP3)",
-                    "Opus (Best Ratio)", "Lossless (FLAC)", "Lossless (ALAC)", "Uncompressed (WAV)"],
+            values=["Smart Best Available (Auto)"],
             width=200)
-        self.audio_quality_combo.set("320 kbps (Best MP3)")
+        self.audio_quality_combo.set("Smart Best Available (Auto)")
         self.audio_quality_combo.pack(side="left", padx=(0, 10))
         CTkLabel(self.audio_quality_frame, text="Format:").pack(side="left", padx=(0, 5))
         self.audio_format_combo = CTkComboBox(self.audio_quality_frame,
-            values=["mp3", "flac", "aac", "opus", "wav"], width=100)
+            values=["mp3", "flac", "aac", "opus", "wav", "alac", "ogg"], width=100)
         self.audio_format_combo.set("mp3")
         self.audio_format_combo.pack(side="left", padx=(0, 10))
+        self._update_audio_options({})
+
+        # Subtitle row
+        self.subtitle_frame = CTkFrame(scroll, fg_color="transparent")
+        self.subtitle_frame.pack(fill="x", padx=20, pady=5)
+        self.subtitle_enabled_var = ctk.BooleanVar(value=bool(self.config.subtitles.enabled))
+        self.subtitle_enabled_switch = CTkSwitch(
+            self.subtitle_frame,
+            text="Download Subtitles",
+            variable=self.subtitle_enabled_var,
+        )
+        self.subtitle_enabled_switch.pack(side="left", padx=(0, 10))
+        self.subtitle_embed_var = ctk.BooleanVar(value=bool(self.config.subtitles.embed))
+        self.subtitle_embed_switch = CTkSwitch(
+            self.subtitle_frame,
+            text="Embed Subtitles",
+            variable=self.subtitle_embed_var,
+        )
+        self.subtitle_embed_switch.pack(side="left", padx=(0, 10))
+        CTkLabel(self.subtitle_frame, text="Lang:").pack(side="left", padx=(0, 5))
+        subtitle_lang_default = ",".join(self.config.subtitles.languages or ["en"])
+        self.subtitle_lang_entry = CTkEntry(self.subtitle_frame, width=120)
+        self.subtitle_lang_entry.insert(0, subtitle_lang_default)
+        self.subtitle_lang_entry.pack(side="left", padx=(0, 10))
 
         # Available formats label
         self.available_label = CTkLabel(scroll, text="", text_color="gray", font=CTkFont(size=11))
@@ -206,6 +229,7 @@ class KyroApp(ctk.CTk):
         quality_labels = build_quality_labels(info.available)
         self.quality_combo.configure(values=quality_labels)
         self.quality_combo.set(quality_labels[0])
+        self._update_audio_options(info.available)
         avail = info.available
         avail_text = "Available: " + ", ".join(quality_labels)
         if avail["audio_bitrates"]:
@@ -226,6 +250,24 @@ class KyroApp(ctk.CTk):
         self.download_btn.configure(state="normal")
         self.status_label.configure(text=f"Ready to download: {info.title}", text_color="#2ECC71")
 
+    def _update_audio_options(self, analysis):
+        """Refresh audio options from detected source formats and presets."""
+        options = build_smart_audio_options(analysis)
+        self._audio_options = {opt["label"]: opt for opt in options}
+
+        labels = [opt["label"] for opt in options]
+        self.audio_quality_combo.configure(values=labels)
+        self.audio_quality_combo.set(labels[0])
+
+        formats = []
+        for opt in options:
+            audio_format = opt.get("audio_format")
+            if audio_format and audio_format not in formats:
+                formats.append(audio_format)
+        if formats:
+            self.audio_format_combo.configure(values=formats)
+            self.audio_format_combo.set(formats[0])
+
     def _start_download(self):
         if not self._current_url:
             return
@@ -242,11 +284,22 @@ class KyroApp(ctk.CTk):
                 break
         audio_format = "mp3"
         audio_quality = "192"
+        audio_selector = None
+        subtitles_cfg = None
         if only_audio:
-            preset_label = self.audio_quality_combo.get()
-            preset = AUDIO_QUALITY_PRESETS.get(preset_label, AUDIO_QUALITY_PRESETS["320 kbps (Best MP3)"])
-            audio_format = preset.get("format", self.audio_format_combo.get())
-            audio_quality = preset.get("abr", "192")
+            selected = self._audio_options.get(self.audio_quality_combo.get(), {})
+            audio_format = selected.get("audio_format", self.audio_format_combo.get())
+            audio_quality = selected.get("audio_quality", "192")
+            audio_selector = selected.get("selector")
+        if self.subtitle_enabled_var.get():
+            languages = [lang.strip() for lang in self.subtitle_lang_entry.get().split(",") if lang.strip()]
+            subtitles_cfg = {
+                "enabled": True,
+                "languages": languages or ["en"],
+                "embed": self.subtitle_embed_var.get() and not only_audio,
+                "auto_generated": True,
+                "format": "srt",
+            }
         self._download_cancelled = False
         self._download_start_time = time.time()
         self.progress.pack(fill="x", padx=20, pady=5)
@@ -277,6 +330,9 @@ class KyroApp(ctk.CTk):
                 cfg["dolby"] = dolby
                 cfg["audio_format"] = audio_format
                 cfg["audio_quality"] = audio_quality
+                cfg["audio_selector"] = audio_selector
+                if subtitles_cfg:
+                    cfg["subtitles"] = subtitles_cfg
                 cfg["format_id"] = None
                 if only_audio:
                     cfg["only_audio"] = True
@@ -295,6 +351,7 @@ class KyroApp(ctk.CTk):
                     dolby=dolby,
                     audio_format=audio_format,
                     audio_quality=audio_quality,
+                    audio_selector=audio_selector,
                     progress_hook=progress_hook,
                 )
                 # Add to archive after successful download
@@ -370,12 +427,24 @@ class KyroApp(ctk.CTk):
                 break
         audio_format = "mp3"
         audio_quality = "192"
+        audio_selector = None
+        subtitles_cfg = None
         if only_audio:
-            preset_label = self.audio_quality_combo.get()
-            preset = AUDIO_QUALITY_PRESETS.get(preset_label, AUDIO_QUALITY_PRESETS["320 kbps (Best MP3)"])
-            audio_format = preset.get("format", self.audio_format_combo.get())
-            audio_quality = preset.get("abr", "192")
-        item = self.manager.queue_download(url, output_path=str(output), only_audio=only_audio, quality=quality, hdr=hdr, dolby=dolby, audio_format=audio_format, audio_quality=audio_quality)
+            selected = self._audio_options.get(self.audio_quality_combo.get(), {})
+            audio_format = selected.get("audio_format", self.audio_format_combo.get())
+            audio_quality = selected.get("audio_quality", "192")
+            audio_selector = selected.get("selector")
+        if self.subtitle_enabled_var.get():
+            languages = [lang.strip() for lang in self.subtitle_lang_entry.get().split(",") if lang.strip()]
+            subtitles_cfg = {
+                "enabled": True,
+                "languages": languages or ["en"],
+                "embed": self.subtitle_embed_var.get() and not only_audio,
+                "auto_generated": True,
+                "format": "srt",
+            }
+            self.manager.config["subtitles"] = subtitles_cfg
+        item = self.manager.queue_download(url, output_path=str(output), only_audio=only_audio, quality=quality, hdr=hdr, dolby=dolby, audio_format=audio_format, audio_quality=audio_quality, audio_selector=audio_selector)
         self.status_label.configure(text=f"Queued: {url[:50]}... (ID: {item.task_id[:8]})", text_color="#2ECC71")
         self._refresh_queue()
 
@@ -398,19 +467,33 @@ class KyroApp(ctk.CTk):
             only_audio = self.format_combo.get() == "audio"
             audio_format = "mp3"
             audio_quality = "192"
+            audio_selector = None
+            subtitles_cfg = None
             if only_audio:
-                preset_label = self.audio_quality_combo.get()
-                preset = AUDIO_QUALITY_PRESETS.get(preset_label, AUDIO_QUALITY_PRESETS["320 kbps (Best MP3)"])
-                audio_format = preset.get("format", self.audio_format_combo.get())
-                audio_quality = preset.get("abr", "192")
+                selected = self._audio_options.get(self.audio_quality_combo.get(), {})
+                audio_format = selected.get("audio_format", self.audio_format_combo.get())
+                audio_quality = selected.get("audio_quality", "192")
+                audio_selector = selected.get("selector")
+            if self.subtitle_enabled_var.get():
+                languages = [lang.strip() for lang in self.subtitle_lang_entry.get().split(",") if lang.strip()]
+                subtitles_cfg = {
+                    "enabled": True,
+                    "languages": languages or ["en"],
+                    "embed": self.subtitle_embed_var.get() and not only_audio,
+                    "auto_generated": True,
+                    "format": "srt",
+                }
             cfg = self.config.model_dump()
             cfg["hdr"] = hdr
             cfg["dolby"] = dolby
             cfg["audio_format"] = audio_format
             cfg["audio_quality"] = audio_quality
+            cfg["audio_selector"] = audio_selector
+            if subtitles_cfg:
+                cfg["subtitles"] = subtitles_cfg
             self.manager.config.update(cfg)
             for url in urls:
-                self.manager.queue_download(url, output_path=str(output), only_audio=only_audio, quality=quality, hdr=hdr, dolby=dolby, audio_format=audio_format, audio_quality=audio_quality)
+                self.manager.queue_download(url, output_path=str(output), only_audio=only_audio, quality=quality, hdr=hdr, dolby=dolby, audio_format=audio_format, audio_quality=audio_quality, audio_selector=audio_selector)
             self.manager.execute_async()
             self.status_label.configure(text=f"Started {len(urls)} downloads", text_color="#2ECC71")
             self._start_queue_refresh()

@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from src.core.downloader import (
     VideoInfo,
+    build_smart_audio_options,
     download_single,
     list_video_formats,
     list_audio_formats,
@@ -119,6 +120,16 @@ class TestBuildYdlOpts:
         assert opts["format"] == "bestaudio/best"
         assert "keepvideo" not in opts
 
+    def test_audio_only_selector_override(self, tmp_path):
+        opts = build_ydl_opts(
+            str(tmp_path),
+            only_audio=True,
+            audio_format="opus",
+            audio_quality="160",
+            audio_selector="bestaudio[acodec*=opus]/bestaudio/best",
+        )
+        assert opts["format"] == "bestaudio[acodec*=opus]/bestaudio/best"
+
     def test_specific_format(self, tmp_path):
         opts = build_ydl_opts(str(tmp_path), format_id="137")
         assert opts["format"] == "137+bestaudio/best"
@@ -142,6 +153,27 @@ class TestBuildYdlOpts:
         assert opts["playlistend"] == 10
         assert opts["playlist_reverse"] is True
 
+    def test_subtitle_options_enabled(self, tmp_path):
+        subtitles_cfg = {
+            "enabled": True,
+            "languages": ["en", "es"],
+            "auto_generated": True,
+            "embed": False,
+            "format": "srt",
+        }
+        opts = build_ydl_opts(str(tmp_path), subtitles=subtitles_cfg)
+        assert opts["writesubtitles"] is True
+        assert opts["writeautomaticsub"] is True
+        assert opts["subtitleslangs"] == ["en", "es"]
+        assert opts["subtitlesformat"] == "srt"
+
+    def test_output_template_override(self, tmp_path):
+        opts = build_ydl_opts(
+            str(tmp_path),
+            output_template="%(uploader)s/%(title)s [%(id)s].%(ext)s",
+        )
+        assert opts["outtmpl"].endswith("%(uploader)s/%(title)s [%(id)s].%(ext)s")
+
 
 class TestDownloadSingle:
     def test_explicit_progress_hook_is_forwarded(self, tmp_path):
@@ -160,3 +192,24 @@ class TestDownloadSingle:
                 )
 
         assert mock_build.call_args.kwargs["progress_hook"] is hook
+
+
+class TestSmartAudioOptions:
+    def test_build_smart_audio_options_includes_source_and_presets(self):
+        analysis = {
+            "audio_streams": [
+                {
+                    "format_id": "251",
+                    "codec": "opus",
+                    "selector_codec": "opus",
+                    "abr": 160,
+                    "ext": "webm",
+                }
+            ]
+        }
+        options = build_smart_audio_options(analysis)
+        labels = [o["label"] for o in options]
+
+        assert labels[0] == "Smart Best Available (Auto)"
+        assert any("Source OPUS 160 kbps" in label for label in labels)
+        assert any(label.startswith("Preset 320 kbps") for label in labels)

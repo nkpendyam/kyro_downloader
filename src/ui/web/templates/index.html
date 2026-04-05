@@ -38,11 +38,43 @@
                     </select>
                 </div>
                 <div class="form-group">
+                    <label for="video-quality">Quality</label>
+                    <select id="video-quality">
+                        <option value="best">Best</option>
+                        <option value="4k">4K</option>
+                        <option value="1080p">1080p</option>
+                        <option value="720p">720p</option>
+                        <option value="480p">480p</option>
+                    </select>
+                </div>
+                <div class="form-group">
                     <label for="priority">Priority</label>
                     <select id="priority">
                         <option value="normal">Normal</option>
                         <option value="high">High</option>
                         <option value="low">Low</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="preset">Preset</label>
+                    <select id="preset">
+                        <option value="none">None</option>
+                        <option value="voice-optimized">Voice Optimized</option>
+                        <option value="music-lossless">Music Lossless</option>
+                        <option value="podcast-fast">Podcast Fast</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="subs-lang">Subtitle Languages</label>
+                    <input type="text" id="subs-lang" placeholder="en,es,fr" value="en">
+                </div>
+                <div class="form-group">
+                    <label for="subs-format">Subtitle Format</label>
+                    <select id="subs-format">
+                        <option value="srt">SRT</option>
+                        <option value="vtt">VTT</option>
                     </select>
                 </div>
             </div>
@@ -52,7 +84,10 @@
             </div>
             <div class="checkbox-group">
                 <label><input type="checkbox" id="subtitles"> Download Subtitles</label>
+                <label><input type="checkbox" id="embed-subs"> Embed Subtitles</label>
                 <label><input type="checkbox" id="sponsorblock"> SponsorBlock</label>
+                <label><input type="checkbox" id="hdr"> HDR</label>
+                <label><input type="checkbox" id="dolby"> Dolby Audio</label>
             </div>
             <div class="btn-group">
                 <button id="btn-info" class="btn btn-secondary">Get Info</button>

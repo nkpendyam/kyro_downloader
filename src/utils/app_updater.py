@@ -10,7 +10,7 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 GITHUB_API = "https://api.github.com/repos/nkpendyam/kyro_downloader"
-CURRENT_VERSION = "2.0.0"
+CURRENT_VERSION = "1.0.0"
 
 
 def get_current_version():

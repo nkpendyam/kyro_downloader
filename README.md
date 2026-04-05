@@ -2,13 +2,20 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.0.0-orange)]()
+[![Version](https://img.shields.io/badge/Version-1.0.0-orange)]()
 [![Tests](https://img.shields.io/badge/Tests-passing-brightgreen)]()
 [![CI](https://github.com/nkpendyam/kyro_downloader/actions/workflows/ci.yml/badge.svg)](https://github.com/nkpendyam/kyro_downloader/actions)
 
 Production-grade media downloader by **nkpendyam** - download videos, audio, stories, posts, and playlists from 1000+ social media platforms in up to 8K HDR with Dolby Atmos audio.
 
 ## Features
+
+## Release Notes (2026-04-05)
+- Added competitor-grade media presets: `voice-optimized`, `music-lossless`, and `podcast-fast` for CLI download flows.
+- Added smart subtitle defaults and output naming templates to preset profiles.
+- Added Web API contract tests to keep [docs/web_api.md](docs/web_api.md) synchronized with runtime FastAPI + WebSocket routes.
+- Fixed CLI type-check noise in tests and strengthened regression coverage for smart audio, subtitles, presets, and output template wiring.
+- Synced CLI/GUI/Web docs with current implementation behavior.
 
 ### Core
 - 8K/4K/1080p/720p video downloads with HDR support
@@ -94,6 +101,9 @@ kyro download URL --hdr        # HDR version
 kyro download URL --dolby      # Dolby Atmos
 kyro mp3 URL                   # Audio extraction
 kyro mp3 URL --format flac     # FLAC audio
+kyro mp3 URL --preset music-lossless     # Lossless-focused preset
+kyro mp3 URL --preset podcast-fast       # Fast speech/podcast preset
+kyro download URL --preset voice-optimized  # Voice-optimized profile
 kyro playlist URL -w 5         # Playlist with 5 workers
 kyro batch urls.txt            # Batch download
 kyro info URL --subs           # Video info + subtitles

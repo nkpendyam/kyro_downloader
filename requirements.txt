@@ -10,6 +10,7 @@ pydantic
 textual
 plyer
 packaging
+mutagen
 customtkinter
 fastapi
 uvicorn

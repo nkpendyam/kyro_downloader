@@ -6,6 +6,8 @@
     body { width: 320px; padding: 16px; font-family: system-ui, sans-serif; }
     h2 { margin: 0 0 12px; font-size: 16px; color: #1a73e8; }
     .url-display { word-break: break-all; font-size: 12px; color: #555; margin-bottom: 12px; padding: 8px; background: #f5f5f5; border-radius: 4px; }
+    .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+    select { width: 100%; padding: 8px; border: 1px solid #dadce0; border-radius: 6px; font-size: 12px; }
     .btn-group { display: flex; flex-direction: column; gap: 8px; }
     button { padding: 10px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; }
     .btn-primary { background: #1a73e8; color: white; }
@@ -20,6 +22,22 @@
 <body>
   <h2>Kyro Downloader</h2>
   <div class="url-display" id="url-display">Detecting URL...</div>
+  <div class="controls">
+    <select id="video-quality">
+      <option value="best">Best Video</option>
+      <option value="2160">4K</option>
+      <option value="1080">1080p</option>
+      <option value="720">720p</option>
+      <option value="480">480p</option>
+    </select>
+    <select id="audio-format">
+      <option value="mp3">MP3</option>
+      <option value="flac">FLAC</option>
+      <option value="aac">AAC</option>
+      <option value="opus">Opus</option>
+      <option value="wav">WAV</option>
+    </select>
+  </div>
   <div class="btn-group">
     <button class="btn-primary" id="btn-download">Download</button>
     <button class="btn-secondary" id="btn-mp3">Download as MP3</button>

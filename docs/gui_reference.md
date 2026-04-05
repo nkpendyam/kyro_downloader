@@ -11,8 +11,9 @@ The Kyro Downloader GUI is built with CustomTkinter and features 7 tabs for comp
 - **Fetch Info** - Retrieves video metadata and available formats
 - **Smart Quality Selector** - Auto-detected options like "8K HDR + Dolby", "4K", "1080p"
 - **Format Toggle** - Switch between Video and Audio mode
-- **Audio Quality** - 11 presets from 64kbps (Voice) to Lossless (FLAC/ALAC/WAV)
-- **Audio Format** - mp3, flac, aac, opus, wav
+- **Smart Audio Selector** - Dynamically detects source audio streams and combines them with transcode presets
+- **Audio Format** - mp3, flac, aac, opus, wav, alac, ogg
+- **Subtitle Controls** - Toggle subtitle download, embedding, and languages (comma-separated)
 - **Download/Queue/Batch** buttons
 - **Progress bar** with real-time speed display
 - **Cancel** button for active downloads

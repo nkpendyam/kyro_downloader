@@ -58,11 +58,30 @@
 | `--quality`, `-q` | Quality preset (best, 1080p, 720p, 480p) |
 | `--hdr` | Download HDR version |
 | `--dolby` | Download with Dolby audio |
+| `--subs` | Download subtitles with the video |
+| `--subs-lang` | Subtitle languages, comma-separated (`en,es,fr`) |
+| `--embed-subs` | Embed downloaded subtitles into video output |
+| `--subs-format` | Subtitle format (`srt`, `vtt`, etc.) |
+| `--no-auto-subs` | Disable auto-generated subtitles |
+| `--preset` | Apply media preset (`voice-optimized`, `music-lossless`, `podcast-fast`) |
 | `--proxy` | Proxy URL |
 | `--cookies` | Cookies file path |
 | `--rate-limit` | Rate limit (e.g. 1M) |
 | `--sponsorblock` | Enable SponsorBlock |
 | `--no-notify` | Disable notifications |
+
+### Audio-Only Flags
+| Flag | Description |
+|------|-------------|
+| `--smart-audio` | Auto-select best source audio stream based on detected formats |
+| `--prefer-codec` | Prefer codec with smart audio (`any`, `opus`, `aac`, `mp3`, `flac`, `alac`, `wav`, `ogg`) |
+| `--format` | Output audio format |
+| `--quality` | Output audio bitrate |
+| `--subs` | Download subtitles alongside audio |
+| `--subs-lang` | Subtitle languages, comma-separated |
+| `--subs-format` | Subtitle format (`srt`, `vtt`, etc.) |
+| `--no-auto-subs` | Disable auto-generated subtitles |
+| `--preset` | Apply media preset (`voice-optimized`, `music-lossless`, `podcast-fast`) |
 
 ### Playlist Flags
 | Flag | Description |
@@ -75,3 +94,9 @@
 | `--mp3` | Audio-only mode |
 | `--audio-format` | Audio format (mp3, flac, aac, ogg, wav) |
 | `--audio-quality` | Audio bitrate (default: 192) |
+| `--subs` | Download subtitles for playlist videos |
+| `--subs-lang` | Subtitle languages, comma-separated |
+| `--embed-subs` | Embed subtitles into playlist video outputs |
+| `--subs-format` | Subtitle format (`srt`, `vtt`, etc.) |
+| `--no-auto-subs` | Disable auto-generated subtitles |
+| `--preset` | Apply media preset (`voice-optimized`, `music-lossless`, `podcast-fast`) |

@@ -17,7 +17,7 @@ def create_app():
 
     config = load_config()
     web_config = config.web
-    app = FastAPI(title="Kyro Downloader API", description="REST API and WebSocket interface for Kyro Downloader by nkpendyam", version="2.0.0")
+    app = FastAPI(title="Kyro Downloader API", description="REST API and WebSocket interface for Kyro Downloader by nkpendyam", version="1.0.0")
     cors_origins = web_config.cors_origins
     allow_creds = "*" not in cors_origins
     app.add_middleware(CORSMiddleware, allow_origins=cors_origins, allow_credentials=allow_creds, allow_methods=["*"], allow_headers=["*"])

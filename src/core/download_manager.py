@@ -46,7 +46,7 @@ class DownloadManager:
                 logger.info(f"Duplicate found, using unique filename: {unique_name}")
         return info, unique_name
 
-    def queue_download(self, url, output_path=None, format_id=None, only_audio=False, priority=Priority.NORMAL, quality=None, hdr=False, dolby=False, audio_format=None, audio_quality=None):
+    def queue_download(self, url, output_path=None, format_id=None, only_audio=False, priority=Priority.NORMAL, quality=None, hdr=False, dolby=False, audio_format=None, audio_quality=None, audio_selector=None, subtitles=None, sponsorblock=None, output_template=None):
         url = normalize_url(url)
         output = validate_output_path(output_path or self.config.get("output_path", "./downloads"))
         cfg = self._build_download_config()
@@ -58,6 +58,14 @@ class DownloadManager:
             cfg["audio_format"] = audio_format
         if audio_quality:
             cfg["audio_quality"] = audio_quality
+        if audio_selector:
+            cfg["audio_selector"] = audio_selector
+        if subtitles is not None:
+            cfg["subtitles"] = subtitles
+        if sponsorblock is not None:
+            cfg["sponsorblock"] = sponsorblock
+        if output_template:
+            cfg["output_template"] = output_template
         if quality and quality != "best":
             height_map = {"8k": 4320, "4k": 2160, "1080p": 1080, "720p": 720, "480p": 480}
             target_h = height_map.get(quality)
@@ -67,8 +75,8 @@ class DownloadManager:
         logger.info(f"Queued: {url} (task_id={item.task_id})")
         return item
 
-    def queue_batch(self, urls, output_path=None, format_id=None, only_audio=False, priority=Priority.NORMAL, quality=None, hdr=False, dolby=False, audio_format=None, audio_quality=None):
-        return [self.queue_download(url, output_path=output_path, format_id=format_id, only_audio=only_audio, priority=priority, quality=quality, hdr=hdr, dolby=dolby, audio_format=audio_format, audio_quality=audio_quality) for url in urls]
+    def queue_batch(self, urls, output_path=None, format_id=None, only_audio=False, priority=Priority.NORMAL, quality=None, hdr=False, dolby=False, audio_format=None, audio_quality=None, audio_selector=None, subtitles=None, sponsorblock=None, output_template=None):
+        return [self.queue_download(url, output_path=output_path, format_id=format_id, only_audio=only_audio, priority=priority, quality=quality, hdr=hdr, dolby=dolby, audio_format=audio_format, audio_quality=audio_quality, audio_selector=audio_selector, subtitles=subtitles, sponsorblock=sponsorblock, output_template=output_template) for url in urls]
 
     def queue_from_file(self, filepath, **kwargs):
         try:
@@ -94,7 +102,7 @@ class DownloadManager:
         self._executor = ConcurrentExecutor(queue=self.queue, max_workers=max_workers, progress_tracker=self.progress, on_item_complete=self._on_item_complete)
         self._executor.start_async()
 
-    def download_now(self, url, output_path=None, format_id=None, only_audio=False, quality=None, hdr=False, dolby=False, audio_format=None, audio_quality=None, progress_hook=None):
+    def download_now(self, url, output_path=None, format_id=None, only_audio=False, quality=None, hdr=False, dolby=False, audio_format=None, audio_quality=None, audio_selector=None, progress_hook=None):
         url = normalize_url(url)
         output = validate_output_path(output_path or self.config.get("output_path", "./downloads"))
         cfg = self._build_download_config()
@@ -106,6 +114,8 @@ class DownloadManager:
             cfg["audio_format"] = audio_format
         if audio_quality:
             cfg["audio_quality"] = audio_quality
+        if audio_selector:
+            cfg["audio_selector"] = audio_selector
         if quality and quality != "best" and not hdr and not dolby:
             height_map = {"8k": 4320, "4k": 2160, "1080p": 1080, "720p": 720, "480p": 480}
             target_h = height_map.get(quality)
@@ -131,7 +141,7 @@ class DownloadManager:
             self.plugin_loader.fire_hook("on_download_error", url=url, error=str(e))
             raise
 
-    def download_playlist(self, url, output_path=None, format_id=None, only_audio=False, quality=None, hdr=False, dolby=False, audio_format=None, audio_quality=None):
+    def download_playlist(self, url, output_path=None, format_id=None, only_audio=False, quality=None, hdr=False, dolby=False, audio_format=None, audio_quality=None, audio_selector=None, subtitles=None, sponsorblock=None, output_template=None):
         url = normalize_url(url)
         output = validate_output_path(output_path or self.config.get("output_path", "./downloads"))
         try:
@@ -147,6 +157,14 @@ class DownloadManager:
                 cfg["audio_format"] = audio_format
             if audio_quality:
                 cfg["audio_quality"] = audio_quality
+            if audio_selector:
+                cfg["audio_selector"] = audio_selector
+            if subtitles is not None:
+                cfg["subtitles"] = subtitles
+            if sponsorblock is not None:
+                cfg["sponsorblock"] = sponsorblock
+            if output_template:
+                cfg["output_template"] = output_template
             if quality and quality != "best":
                 height_map = {"8k": 4320, "4k": 2160, "1080p": 1080, "720p": 720, "480p": 480}
                 target_h = height_map.get(quality)
@@ -207,6 +225,7 @@ class DownloadManager:
         return {
             "audio_format": self.config.get("audio_format", "mp3"),
             "audio_quality": self.config.get("audio_quality", "192"),
+            "audio_selector": self.config.get("audio_selector"),
             "embed_thumbnail": self.config.get("embed_thumbnail", True),
             "embed_metadata": self.config.get("embed_metadata", True),
             "subtitles": self.config.get("subtitles"),
@@ -220,4 +239,5 @@ class DownloadManager:
             "playlist": self.config.get("playlist"),
             "hdr": self.config.get("hdr", False),
             "dolby": self.config.get("dolby", False),
+            "output_template": self.config.get("output_template"),
         }

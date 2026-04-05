@@ -1,6 +1,9 @@
 """Tests for plugin system."""
 from unittest.mock import MagicMock
+
+from src.cli.__main__ import create_parser
 from src.plugins.api import PluginBase
+from src.plugins.builtin.subtitle_auto import AutoSubtitlePlugin
 from src.plugins.loader import PluginLoader
 
 
@@ -72,3 +75,53 @@ class TestPluginLoader:
         loader._plugins["test"] = mock_plugin
         loader.fire_hook("on_download_start", url="http://test.com")
         mock_plugin.on_download_start.assert_called_once()
+
+
+class TestSubtitlePlugin:
+    def test_auto_subtitle_plugin_uses_video_info(self, monkeypatch, tmp_path):
+        plugin = AutoSubtitlePlugin()
+
+        class _Info:
+            raw = {
+                "title": "test",
+                "webpage_url": "https://example.com/watch?v=1",
+            }
+
+        called = {}
+
+        def fake_get_video_info(url):
+            called["url"] = url
+            return _Info()
+
+        def fake_download_subs(info, output_dir, languages=None, subtitle_format="srt"):
+            called["info"] = info
+            called["output_dir"] = output_dir
+            called["languages"] = languages
+            return []
+
+        monkeypatch.setattr("src.plugins.builtin.subtitle_auto.get_video_info", fake_get_video_info)
+        monkeypatch.setattr("src.services.subtitles.download_subtitles_separately", fake_download_subs)
+
+        result = plugin.on_download_complete("https://example.com/watch?v=1", str(tmp_path / "video.mp4"))
+        assert result == str(tmp_path / "video.mp4")
+        assert called["url"] == "https://example.com/watch?v=1"
+        assert called["languages"] == ["en"]
+
+
+class TestCLISubtitleFlags:
+    def test_download_subtitle_flags(self):
+        parser = create_parser()
+        args = parser.parse_args([
+            "download",
+            "https://example.com/video",
+            "--subs",
+            "--subs-lang",
+            "en,es",
+            "--embed-subs",
+            "--subs-format",
+            "vtt",
+        ])
+        assert args.subs is True
+        assert args.subs_lang == "en,es"
+        assert args.embed_subs is True
+        assert args.subs_format == "vtt"

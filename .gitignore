@@ -7,6 +7,7 @@ venv/
 .venv/
 downloads/
 tmp_real_e2e/
+tmp_real_matrix/
 youtube/
 logs/
 *.log
