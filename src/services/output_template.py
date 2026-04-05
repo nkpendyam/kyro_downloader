@@ -1,4 +1,6 @@
 """Output template service for customizable file naming."""
+from typing import Any
+
 import re
 from datetime import datetime
 from pathlib import Path
@@ -17,7 +19,7 @@ TEMPLATES = {
     "date": DATE_TEMPLATE,
 }
 
-def apply_template(template, info):
+def apply_template(template: str | None, info: dict[str, Any]) -> str:
     if not template or template in TEMPLATES:
         template = TEMPLATES.get(template, DEFAULT_TEMPLATE)
     result = template
@@ -38,6 +40,6 @@ def apply_template(template, info):
     result = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", result)
     return result
 
-def get_output_path(template, info, output_dir):
+def get_output_path(template: str | None, info: dict[str, Any], output_dir: str | Path) -> str:
     filename = apply_template(template, info)
     return str(Path(output_dir) / filename)

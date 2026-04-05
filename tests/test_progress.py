@@ -1,4 +1,5 @@
 """Tests for progress module."""
+import asyncio
 from unittest.mock import MagicMock
 from src.core.progress import ProgressTracker, create_progress_hook, ProgressInfo
 
@@ -86,6 +87,49 @@ class TestProgressTracker:
         pt.add_callback(callback)
         pt.remove_callback(callback)
         assert callback not in pt._callbacks
+
+    def test_update_schedules_websocket_broadcast_with_active_loop(self, monkeypatch):
+        pt = ProgressTracker()
+        pt.add_task("task1", filename="test.mp4", total_bytes=1000)
+
+        class _Loop:
+            def is_running(self):
+                return True
+
+        async def _broadcast(_task_id, _progress):
+            return None
+
+        called = {"scheduled": False}
+
+        def _run_coroutine_threadsafe(coro, loop):
+            called["scheduled"] = True
+            called["loop"] = loop
+            coro.close()
+
+        import src.ui.web.websocket as ws
+
+        monkeypatch.setattr(ws, "get_event_loop", lambda: _Loop())
+        monkeypatch.setattr(ws, "broadcast_progress", _broadcast)
+        monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", _run_coroutine_threadsafe)
+
+        pt.update("task1", downloaded_bytes=500, speed=1000, eta=1)
+
+        assert called["scheduled"] is True
+        assert called["loop"].is_running() is True
+
+    def test_update_skips_websocket_broadcast_without_active_loop(self, monkeypatch):
+        pt = ProgressTracker()
+        pt.add_task("task1", filename="test.mp4", total_bytes=1000)
+
+        def _fail_if_called(_coro, _loop):
+            raise AssertionError("run_coroutine_threadsafe should not be called without active loop")
+
+        import src.ui.web.websocket as ws
+
+        monkeypatch.setattr(ws, "get_event_loop", lambda: None)
+        monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", _fail_if_called)
+
+        pt.update("task1", downloaded_bytes=500, speed=1000, eta=1)
 
 
 class TestProgressHook:

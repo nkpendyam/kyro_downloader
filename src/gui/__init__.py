@@ -1,3 +1,5 @@
-"""Kyro Downloader - Modern Desktop GUI Application."""
-__version__ = "1.0.0"
-__author__ = "nkpendyam"
+"""Kyro Downloader GUI package."""
+
+from src import __author__, __version__
+
+__all__ = ["__version__", "__author__"]

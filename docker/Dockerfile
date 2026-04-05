@@ -19,7 +19,7 @@ ENV KYRO_WEB_PORT=8000
 ENV PYTHONUNBUFFERED=1
 ENV PATH="/usr/local/bin:$PATH"
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 CMD curl -f http://localhost:8000/api/status || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 CMD curl -f http://localhost:8000/health || exit 1
 USER kyro
 ENTRYPOINT ["python", "-m", "src.cli"]
 CMD ["--help"]

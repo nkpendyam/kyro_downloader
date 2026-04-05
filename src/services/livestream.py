@@ -1,11 +1,12 @@
 """Live stream download service."""
+
 import subprocess
 from pathlib import Path
 from src.utils.logger import get_logger
 from src.utils.ffmpeg import check_ffmpeg
 logger = get_logger(__name__)
 
-def download_livestream(url, output_path, from_start=False):
+def download_livestream(url: str, output_path: str | Path, from_start: bool = False) -> str | None:
     if not check_ffmpeg():
         logger.error("FFmpeg not available for livestream")
         return None
@@ -27,7 +28,7 @@ def download_livestream(url, output_path, from_start=False):
         logger.error(f"Livestream download failed: {e}")
         return None
 
-def record_livestream_ffmpeg(url, output_path, timeout=3600):
+def record_livestream_ffmpeg(url: str, output_path: str | Path, timeout: int = 3600) -> str | None:
     """Record livestream using yt-dlp piped to ffmpeg.
 
     Uses subprocess with list args (no shell=True) to prevent injection.

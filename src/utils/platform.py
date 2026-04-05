@@ -56,13 +56,6 @@ def normalize_url(url):
         video_id = url.split("/")[-1].split("?")[0]
         url = f"https://www.youtube.com/watch?v={video_id}"
     return url
-    url = url.strip()
-    if not url.startswith(("http://","https://")):
-        url = f"https://{url}"
-    if "youtu.be/" in url:
-        video_id = url.split("/")[-1].split("?")[0]
-        url = f"https://www.youtube.com/watch?v={video_id}"
-    return url
 
 def get_supported_platforms():
     return [{"domain": d, **info} for d, info in PLATFORM_CONFIG.items()]
@@ -71,12 +64,19 @@ def get_hdr_formats(): return ["337","315","334","336","401"]
 def get_dolby_audio_formats(): return ["258","257","256"]
 
 def build_quality_preset(quality, hdr=False, dolby=False):
-    qmap = {"8k":"height<=4320","4k":"height<=2160","2160p":"height<=2160","1080p":"height<=1080","720p":"height<=720","480p":"height<=480"}
-    hf = qmap.get(quality.lower(), "")
+    qmap = {"8k":4320,"4k":2160,"2160p":2160,"1080p":1080,"720p":720,"480p":480}
+    height = qmap.get(str(quality).lower())
+    video_selector = f"bestvideo[height<={height}]" if height else "bestvideo"
     if hdr:
         hdr_f = "|".join(get_hdr_formats())
-        return f"({hf})+({hdr_f})+bestaudio/best" if hf else f"({hdr_f})+bestaudio/best"
+        return (
+            f"{video_selector}[format_id~='^({hdr_f})$']+bestaudio/best"
+            f"/{video_selector}+bestaudio/best"
+        )
     if dolby:
         d_f = "|".join(get_dolby_audio_formats())
-        return f"({hf})+({d_f})/best" if hf else f"({d_f})/best"
-    return f"({hf})+bestaudio/best" if hf else "bestvideo+bestaudio/best"
+        return (
+            f"{video_selector}+bestaudio[format_id~='^({d_f})$']"
+            f"/{video_selector}+bestaudio/best"
+        )
+    return f"{video_selector}+bestaudio/best"

@@ -41,6 +41,7 @@
           url,
           only_audio: false,
           priority: "normal",
+          preset: "none",
         }),
       });
       if (response.ok) {

@@ -1,5 +1,5 @@
 """Tests for retry mechanism."""
-from src.core.retry import retry
+from src.core.retry import retry, retry_network_timeout, retry_on_network_timeout
 
 
 class TestRetry:
@@ -117,6 +117,42 @@ class TestRetry:
         assert len(sleep_times) == 2
         assert sleep_times[0] == 0.1
         assert sleep_times[1] == 0.1
+
+    def test_retry_network_timeout_uses_configured_max_attempts(self):
+        call_count = 0
+
+        @retry_network_timeout(max_attempts=4, base_delay=0.01)
+        def timeout_func():
+            nonlocal call_count
+            call_count += 1
+            raise TimeoutError("network timeout")
+
+        from src.core.retry import RetryExhaustedError
+        try:
+            timeout_func()
+            assert False, "Should have raised RetryExhaustedError"
+        except RetryExhaustedError:
+            pass
+
+        assert call_count == 4
+
+    def test_retry_on_network_timeout_wrapper(self):
+        call_count = 0
+
+        def flaky_timeout():
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise TimeoutError("network timeout")
+            return "ok"
+
+        result = retry_on_network_timeout(
+            flaky_timeout,
+            _timeout_retry={"max_attempts": 3, "base_delay": 0.01},
+        )
+
+        assert result == "ok"
+        assert call_count == 3
 
 
 class raises_error:

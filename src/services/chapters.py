@@ -1,4 +1,6 @@
 """Chapter extraction service."""
+from typing import Any
+
 import os
 import subprocess
 import json
@@ -6,7 +8,7 @@ from src.utils.logger import get_logger
 from src.utils.ffmpeg import check_ffmpeg
 logger = get_logger(__name__)
 
-def extract_chapters(video_path):
+def extract_chapters(video_path: str) -> list[dict[str, Any]]:
     if not check_ffmpeg():
         logger.error("FFmpeg not available")
         return []
@@ -24,7 +26,7 @@ def extract_chapters(video_path):
         logger.error(f"Chapter extraction failed: {e}")
         return []
 
-def split_by_chapters(video_path, output_dir):
+def split_by_chapters(video_path: str, output_dir: str) -> list[str]:
     chapters = extract_chapters(video_path)
     if not chapters:
         logger.warning("No chapters found")

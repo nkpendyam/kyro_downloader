@@ -29,10 +29,3 @@ nul
 *.spec.bak
 .DS_Store
 Thumbs.db
-.hypothesis/
-.kyro_state/
-test_output/
-nul
-*.spec.bak
-.DS_Store
-Thumbs.db

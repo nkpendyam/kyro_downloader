@@ -2,6 +2,7 @@
 import argparse
 import importlib
 import importlib.util
+import os
 import pathlib
 
 from rich import print
@@ -17,7 +18,8 @@ from src.core.download_manager import DownloadManager
 from src.core.downloader import get_video_info, list_video_formats, build_smart_audio_options
 from src.utils.validation import validate_url, validate_output_path, validate_integer, validate_batch_file
 from src.utils.platform import normalize_url, get_platform_info, get_supported_platforms
-from src.utils.ytdlp_updater import update_ytdlp
+from src.utils.ytdlp_updater import update_ytdlp, auto_update_on_startup
+from src.services.presets import apply_preset_config
 from src.services.thumbnails import show_thumbnail_inline
 from src.services.sponsorblock import extract_video_id, get_segments, format_segments_for_display
 from src.services.subtitles import get_available_subtitles
@@ -43,44 +45,6 @@ _cmd_external = _load_cmd("external")
 
 console = Console()
 
-PRESET_PROFILES = {
-    "voice-optimized": {
-        "audio_format": "opus",
-        "audio_quality": "96",
-        "audio_selector_preference": "opus",
-        "subtitles": {"enabled": True, "languages": ["en"], "embed": False, "auto_generated": True, "format": "vtt"},
-        "output_template": "%(uploader)s/%(upload_date)s_%(title)s.%(ext)s",
-    },
-    "music-lossless": {
-        "audio_format": "flac",
-        "audio_quality": "0",
-        "audio_selector_preference": "flac",
-        "subtitles": {"enabled": False, "languages": ["en"], "embed": False, "auto_generated": False, "format": "srt"},
-        "output_template": "%(uploader)s/%(title)s [%(id)s].%(ext)s",
-    },
-    "podcast-fast": {
-        "audio_format": "mp3",
-        "audio_quality": "96",
-        "audio_selector_preference": "any",
-        "subtitles": {"enabled": True, "languages": ["en"], "embed": False, "auto_generated": True, "format": "vtt"},
-        "output_template": "%(upload_date)s/%(title)s.%(ext)s",
-    },
-}
-
-
-def _apply_preset_config(cfg, preset_name):
-    """Apply a named media preset into runtime config dict."""
-    if not preset_name or preset_name == "none":
-        return None
-    preset = PRESET_PROFILES.get(preset_name)
-    if not preset:
-        return None
-    cfg["audio_format"] = preset["audio_format"]
-    cfg["audio_quality"] = preset["audio_quality"]
-    cfg["subtitles"] = dict(preset["subtitles"])
-    cfg["output_template"] = preset["output_template"]
-    return preset
-
 def create_parser():
     parser = argparse.ArgumentParser(prog="kyro", description="Kyro Downloader - Production-grade media downloader by nkpendyam", formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("-v", "--version", action="version", version=f"Kyro Downloader v{__version__}")
@@ -99,6 +63,7 @@ def create_parser():
     dl.add_argument("--dolby", action="store_true", help="Download with Dolby audio")
     dl.add_argument("--proxy", type=str, help="Proxy URL")
     dl.add_argument("--cookies", type=str, help="Cookies file path")
+    dl.add_argument("--cookies-from-browser", type=str, choices=["chrome", "firefox", "edge", "brave", "opera", "safari"], help="Load cookies directly from browser profile")
     dl.add_argument("--rate-limit", type=str, help="Rate limit (e.g. 1M)")
     dl.add_argument("--no-notify", action="store_true", help="Disable notifications")
     dl.add_argument("--sponsorblock", action="store_true", help="Enable SponsorBlock")
@@ -119,6 +84,7 @@ def create_parser():
     mp3.add_argument("--subs-lang", default="en", help="Subtitle languages (comma-separated, e.g. en,es)")
     mp3.add_argument("--subs-format", default="srt", help="Subtitle format (srt, vtt, etc.)")
     mp3.add_argument("--no-auto-subs", action="store_true", help="Disable auto-generated subtitles")
+    mp3.add_argument("--cookies-from-browser", type=str, choices=["chrome", "firefox", "edge", "brave", "opera", "safari"], help="Load cookies directly from browser profile")
     mp3.add_argument("--preset", choices=["none", "voice-optimized", "music-lossless", "podcast-fast"], default="none", help="Apply competitor-grade media preset")
     pl = subparsers.add_parser("playlist", aliases=["pl", "p"], help="Download playlist")
     pl.add_argument("url", nargs="?", help="Playlist URL")
@@ -132,6 +98,7 @@ def create_parser():
     pl.add_argument("--reverse", action="store_true", help="Reverse playlist order")
     pl.add_argument("--random", action="store_true", help="Shuffle playlist")
     pl.add_argument("--sleep", type=float, default=0, help="Sleep between downloads")
+    pl.add_argument("--cookies-from-browser", type=str, choices=["chrome", "firefox", "edge", "brave", "opera", "safari"], help="Load cookies directly from browser profile")
     pl.add_argument("--subs", action="store_true", help="Download subtitles for playlist items")
     pl.add_argument("--subs-lang", default="en", help="Subtitle languages (comma-separated, e.g. en,es)")
     pl.add_argument("--embed-subs", action="store_true", help="Embed subtitles into playlist videos")
@@ -143,6 +110,7 @@ def create_parser():
     batch.add_argument("-o", "--output", type=str, help="Output directory")
     batch.add_argument("-w", "--workers", type=int, default=3, help="Concurrent workers")
     batch.add_argument("--mp3", action="store_true", help="Audio-only mode")
+    batch.add_argument("--cookies-from-browser", type=str, choices=["chrome", "firefox", "edge", "brave", "opera", "safari"], help="Load cookies directly from browser profile")
     batch.add_argument("--subs", action="store_true", help="Download subtitles for each URL")
     batch.add_argument("--subs-lang", default="en", help="Subtitle languages (comma-separated, e.g. en,es)")
     batch.add_argument("--embed-subs", action="store_true", help="Embed subtitles into video outputs")
@@ -289,9 +257,14 @@ def cmd_download(args, config):
     format_id = formats[choice]["format_id"]
     print(f"\n[bold blue]Downloading (format: {format_id})...[/bold blue]")
     cfg = config.model_dump()
-    preset = _apply_preset_config(cfg, getattr(args, "preset", "none"))
-    if args.proxy: cfg["proxy"] = args.proxy
-    if args.cookies: cfg["cookies_file"] = args.cookies
+    preset = apply_preset_config(cfg, getattr(args, "preset", "none"))
+    if args.proxy:
+        cfg["proxy"] = args.proxy
+    if getattr(args, "cookies", None):
+        cfg["cookies_file"] = args.cookies
+        cfg["cookies_from_browser"] = None
+    elif getattr(args, "cookies_from_browser", None):
+        cfg["cookies_from_browser"] = args.cookies_from_browser
     if args.rate_limit: cfg["rate_limit"] = args.rate_limit
     if args.sponsorblock: cfg["sponsorblock"] = {"enabled": True}
     subtitles_cfg = _build_subtitles_config(args)
@@ -316,7 +289,9 @@ def cmd_mp3(args, config):
     output = validate_output_path(args.output or config.general.output_path)
     manager = DownloadManager(config.model_dump())
     cfg = config.model_dump()
-    preset = _apply_preset_config(cfg, getattr(args, "preset", "none"))
+    preset = apply_preset_config(cfg, getattr(args, "preset", "none"))
+    if getattr(args, "cookies_from_browser", None):
+        cfg["cookies_from_browser"] = args.cookies_from_browser
     cfg["audio_format"] = args.format
     cfg["audio_quality"] = args.quality
     if getattr(args, "smart_audio", False):
@@ -350,7 +325,9 @@ def cmd_playlist(args, config):
     output = validate_output_path(args.output or config.general.output_path)
     manager = DownloadManager(config.model_dump())
     cfg = config.model_dump()
-    preset = _apply_preset_config(cfg, getattr(args, "preset", "none"))
+    preset = apply_preset_config(cfg, getattr(args, "preset", "none"))
+    if getattr(args, "cookies_from_browser", None):
+        cfg["cookies_from_browser"] = args.cookies_from_browser
     pl_cfg = {"concurrent_downloads": args.workers, "sleep_interval": args.sleep, "max_downloads": args.max, "playlist_reverse": args.reverse, "playlist_random": args.random}
     if args.mp3:
         cfg["audio_format"] = getattr(args, "audio_format", "mp3")
@@ -381,14 +358,28 @@ def cmd_batch(args, config):
     print(f"[bold green]Found {len(urls)} URLs in {args.file}[/bold green]")
     output = validate_output_path(args.output or config.general.output_path)
     manager = DownloadManager(config.model_dump())
-    preset = _apply_preset_config(manager.config, getattr(args, "preset", "none"))
-    manager.config["concurrent_workers"] = args.workers
+    cfg = config.model_dump()
+    preset = apply_preset_config(cfg, getattr(args, "preset", "none"))
+    if getattr(args, "cookies_from_browser", None):
+        cfg["cookies_from_browser"] = args.cookies_from_browser
+    cfg["concurrent_workers"] = args.workers
     subtitles_cfg = _build_subtitles_config(args)
     if subtitles_cfg:
-        manager.config["subtitles"] = subtitles_cfg
+        cfg["subtitles"] = subtitles_cfg
+    manager.config.update(cfg)
     if preset:
         print(f"[bold cyan]Preset applied:[/bold cyan] {args.preset}")
-    for item in manager.queue_batch(urls, output_path=str(output), only_audio=args.mp3):
+    effective_only_audio = bool(args.mp3 or (preset and preset.get("only_audio")))
+    for item in manager.queue_batch(
+        urls,
+        output_path=str(output),
+        only_audio=effective_only_audio,
+        audio_format=manager.config.get("audio_format"),
+        audio_quality=manager.config.get("audio_quality"),
+        audio_selector=manager.config.get("audio_selector"),
+        subtitles=manager.config.get("subtitles"),
+        output_template=manager.config.get("output_template"),
+    ):
         print(f"  Queued: {item.url} [{item.task_id[:8]}]")
     print(f"\n[bold blue]Starting {len(urls)} downloads with {args.workers} workers...[/bold blue]")
     manager.execute()
@@ -480,8 +471,10 @@ def cmd_config(args, config):
         print(f"[bold green]Config saved to: {path}[/bold green]")
     elif args.action == "reset":
         from src.config.defaults import DEFAULT_CONFIG
-        config = AppConfig(**DEFAULT_CONFIG)
-        path = save_config(config, args.path)
+        reset_config = AppConfig(**DEFAULT_CONFIG)
+        path = save_config(reset_config, args.path)
+        for section_name in reset_config.model_dump().keys():
+            setattr(config, section_name, getattr(reset_config, section_name))
         print(f"[bold green]Config reset and saved to: {path}[/bold green]")
         return config
 
@@ -578,18 +571,18 @@ def interactive_mode(config):
         elif choice == "1":
             url = Prompt.ask("Enter URL")
             output = Prompt.ask("Output path", default=config.general.output_path)
-            cmd_download(argparse.Namespace(url=url, output=output, format=None, quality=None, hdr=False, dolby=False, proxy=None, cookies=None, rate_limit=None, no_notify=False, sponsorblock=False, preset="none", subs=False, subs_lang="en", embed_subs=False, subs_format="srt", no_auto_subs=False), config)
+            cmd_download(argparse.Namespace(url=url, output=output, format=None, quality=None, hdr=False, dolby=False, proxy=None, cookies=None, cookies_from_browser=None, rate_limit=None, no_notify=False, sponsorblock=False, preset="none", subs=False, subs_lang="en", embed_subs=False, subs_format="srt", no_auto_subs=False), config)
         elif choice == "2":
             url = Prompt.ask("Enter URL")
             output = Prompt.ask("Output path", default=config.general.output_path)
-            cmd_mp3(argparse.Namespace(url=url, output=output, format="mp3", quality="192", smart_audio=False, prefer_codec="any", preset="none", subs=False, subs_lang="en", subs_format="srt", no_auto_subs=False, embed_subs=False), config)
+            cmd_mp3(argparse.Namespace(url=url, output=output, format="mp3", quality="192", smart_audio=False, prefer_codec="any", cookies_from_browser=None, preset="none", subs=False, subs_lang="en", subs_format="srt", no_auto_subs=False, embed_subs=False), config)
         elif choice == "3":
             url = Prompt.ask("Enter playlist URL")
             output = Prompt.ask("Output path", default=config.general.output_path)
-            cmd_playlist(argparse.Namespace(url=url, output=output, workers=3, max=None, reverse=False, random=False, sleep=0, format=None, mp3=False, audio_format="mp3", audio_quality="192", preset="none", subs=False, subs_lang="en", embed_subs=False, subs_format="srt", no_auto_subs=False), config)
+            cmd_playlist(argparse.Namespace(url=url, output=output, workers=3, max=None, reverse=False, random=False, sleep=0, format=None, mp3=False, audio_format="mp3", audio_quality="192", cookies_from_browser=None, preset="none", subs=False, subs_lang="en", embed_subs=False, subs_format="srt", no_auto_subs=False), config)
         elif choice == "4":
             filepath = Prompt.ask("Enter batch file path")
-            cmd_batch(argparse.Namespace(file=filepath, output="", workers=3, mp3=False, preset="none", subs=False, subs_lang="en", embed_subs=False, subs_format="srt", no_auto_subs=False), config)
+            cmd_batch(argparse.Namespace(file=filepath, output="", workers=3, mp3=False, cookies_from_browser=None, preset="none", subs=False, subs_lang="en", embed_subs=False, subs_format="srt", no_auto_subs=False), config)
         elif choice == "5":
             query = Prompt.ask("Search query")
             cmd_search(argparse.Namespace(query=query, platform="youtube", max_results=20), config)
@@ -599,7 +592,9 @@ def interactive_mode(config):
             cmd_platforms(argparse.Namespace(), config)
         elif choice == "8":
             action = Prompt.ask("Action", choices=["show", "save", "reset"])
-            cmd_config(argparse.Namespace(action=action, path=None), config)
+            updated = cmd_config(argparse.Namespace(action=action, path=None), config)
+            if isinstance(updated, AppConfig):
+                config = updated
 
 
 
@@ -610,6 +605,8 @@ def main():
     except Exception as e:
         print(f"[bold red]Config error: {e}[/bold red]")
         config = AppConfig()
+    if getattr(config.general, "auto_update", False) and not os.environ.get("PYTEST_CURRENT_TEST") and not args.update:
+        auto_update_on_startup(check_only=False)
     if args.update:
         if update_ytdlp(): print("[bold green]yt-dlp updated![/bold green]")
         else: print("[bold red]Update failed[/bold red]")
@@ -619,6 +616,11 @@ def main():
         interactive_mode(config)
         return
     if not args.no_banner: show_banner()
+    if args.command == "config":
+        updated = cmd_config(args, config)
+        if isinstance(updated, AppConfig):
+            config = updated
+        return
     command_map = {
         "download": cmd_download, "dl": cmd_download, "d": cmd_download,
         "mp3": cmd_mp3, "audio": cmd_mp3, "a": cmd_mp3,
@@ -626,7 +628,6 @@ def main():
         "batch": cmd_batch, "b": cmd_batch,
         "info": cmd_info, "i": cmd_info,
         "platforms": cmd_platforms,
-        "config": cmd_config,
         "stats": lambda a, c: _cmd_stats.show_stats(),
         "archive": lambda a, c: _cmd_archive.clear_archive() if getattr(a, 'clear', False) else _cmd_archive.show_archive(),
         "convert": lambda a, c: _cmd_convert.convert_batch(a.batch, a.format, remove_original=a.remove_original) if a.batch else _cmd_convert.convert_single(a.input, a.format, remove_original=a.remove_original),

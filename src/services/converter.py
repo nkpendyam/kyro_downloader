@@ -1,4 +1,6 @@
 """Format conversion service for downloaded media."""
+from typing import Any
+
 import subprocess
 from pathlib import Path
 from src.utils.logger import get_logger
@@ -10,7 +12,7 @@ SUPPORTED_FORMATS = {
     "audio": ["mp3", "flac", "aac", "ogg", "wav", "opus", "m4a"],
 }
 
-def convert_file(input_path, output_format, quality=None, remove_original=False):
+def convert_file(input_path: str | Path, output_format: str, quality: str | None = None, remove_original: bool = False) -> str | None:
     if not check_ffmpeg():
         logger.error("FFmpeg not available for conversion")
         return None
@@ -42,8 +44,8 @@ def convert_file(input_path, output_format, quality=None, remove_original=False)
         logger.error(f"Conversion error: {e}")
         return None
 
-def batch_convert(files, output_format, quality=None, remove_original=False):
-    results = []
+def batch_convert(files: list[str | Path], output_format: str, quality: str | None = None, remove_original: bool = False) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
     for f in files:
         result = convert_file(f, output_format, quality, remove_original)
         results.append({"input": f, "output": result, "success": result is not None})

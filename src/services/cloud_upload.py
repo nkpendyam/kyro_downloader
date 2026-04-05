@@ -1,10 +1,12 @@
 """Cloud upload service for S3 and Google Drive."""
+from typing import Any
+
 import os
 from pathlib import Path
 from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
-def upload_to_s3(filepath, bucket, key=None, region="us-east-1"):
+def upload_to_s3(filepath: str | Path, bucket: str, key: str | None = None, region: str = "us-east-1") -> bool:
     try:
         import boto3
     except ImportError:
@@ -24,7 +26,7 @@ def upload_to_s3(filepath, bucket, key=None, region="us-east-1"):
         logger.error(f"S3 upload failed: {e}")
         return False
 
-def upload_to_gdrive(filepath, folder_id=None, headless=False):
+def upload_to_gdrive(filepath: str | Path, folder_id: str | None = None, headless: bool = False) -> bool:
     try:
         from googleapiclient.discovery import build
         from googleapiclient.http import MediaFileUpload
@@ -62,7 +64,7 @@ def upload_to_gdrive(filepath, folder_id=None, headless=False):
         logger.error(f"Google Drive upload failed: {e}")
         return False
 
-def upload_file(filepath, provider, **kwargs):
+def upload_file(filepath: str | Path, provider: str, **kwargs: Any) -> bool:
     if provider == "s3":
         return upload_to_s3(filepath, **kwargs)
     elif provider == "gdrive":

@@ -37,6 +37,11 @@ class TestVideoInfo:
         info = VideoInfo(raw)
         assert info.duration_str == "1:01:05"
 
+    def test_duration_str_float_seconds(self):
+        raw = {"title": "Test", "duration": 233.62}
+        info = VideoInfo(raw)
+        assert info.duration_str == "3:53"
+
     def test_duration_str_unknown(self):
         raw = {"title": "Test", "duration": 0}
         info = VideoInfo(raw)
@@ -120,6 +125,11 @@ class TestBuildYdlOpts:
         assert opts["format"] == "bestaudio/best"
         assert "keepvideo" not in opts
 
+    def test_audio_only_opus_disables_thumbnail_embed_postprocessor(self, tmp_path):
+        opts = build_ydl_opts(str(tmp_path), only_audio=True, audio_format="opus", audio_quality="96")
+        assert opts["writethumbnail"] is False
+        assert all(pp["key"] != "EmbedThumbnail" for pp in opts["postprocessors"])
+
     def test_audio_only_selector_override(self, tmp_path):
         opts = build_ydl_opts(
             str(tmp_path),
@@ -145,6 +155,10 @@ class TestBuildYdlOpts:
     def test_cookies_file(self, tmp_path):
         opts = build_ydl_opts(str(tmp_path), cookies_file="cookies.txt")
         assert opts["cookiefile"] == "cookies.txt"
+
+    def test_cookies_from_browser(self, tmp_path):
+        opts = build_ydl_opts(str(tmp_path), cookies_from_browser="firefox")
+        assert opts["cookiesfrombrowser"] == ("firefox",)
 
     def test_playlist_options(self, tmp_path):
         playlist_cfg = {"sleep_interval": 5, "max_downloads": 10, "playlist_reverse": True}
@@ -192,6 +206,26 @@ class TestDownloadSingle:
                 )
 
         assert mock_build.call_args.kwargs["progress_hook"] is hook
+
+    def test_windows_download_single_does_not_set_sleep_interval_subtitles(self, tmp_path):
+        mock_ydl = MagicMock()
+        mock_ydl.__enter__.return_value.download.return_value = 0
+        captured_opts = {}
+
+        def _ydl_factory(opts):
+            captured_opts.update(opts)
+            return mock_ydl
+
+        with patch("src.core.downloader.platform.system", return_value="Windows"):
+            with patch("src.core.downloader.time.sleep", return_value=None):
+                with patch("src.core.downloader.build_ydl_opts", return_value={}):
+                    with patch("src.core.downloader.yt_dlp.YoutubeDL", side_effect=_ydl_factory):
+                        download_single(
+                            url="https://youtube.com/watch?v=abc123",
+                            output_path=str(tmp_path),
+                        )
+
+        assert "sleep_interval_subtitles" not in captured_opts
 
 
 class TestSmartAudioOptions:

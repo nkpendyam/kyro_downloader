@@ -3,13 +3,14 @@ import threading
 import concurrent.futures
 from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, Header
+from pydantic import BaseModel, Field, field_validator
 
 from src.config.manager import load_config
 from src.core.download_manager import DownloadManager
 from src.core.queue import Priority
 from src.core.downloader import get_video_info, list_video_formats
+from src.services.presets import PRESET_PROFILES
 from src.utils.validation import validate_url, validate_output_path
 from src.utils.platform import normalize_url
 from src.utils.logger import get_logger
@@ -23,7 +24,7 @@ _executor = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_pre
 _executor_started = threading.Event()
 
 # Sensitive config fields to redact from API responses
-_SENSITIVE_FIELDS = {"proxy", "cookies_file", "credentials_file", "token", "password", "secret"}
+_SENSITIVE_FIELDS = {"proxy", "cookies_file", "credentials_file", "token", "api_token", "password", "secret"}
 
 def _redact_config(config_dict):
     """Remove sensitive fields from config before returning via API."""
@@ -41,7 +42,9 @@ def _safe_output_path(path, base_path):
     """Validate output path stays within allowed directory."""
     resolved = Path(path).resolve()
     base = Path(base_path).resolve()
-    if not str(resolved).startswith(str(base)):
+    try:
+        resolved.relative_to(base)
+    except ValueError:
         raise HTTPException(status_code=403, detail="Output path must be within download directory")
     return resolved
 
@@ -59,6 +62,29 @@ def get_config():
     if _config_instance is None:
         get_manager()
     return _config_instance
+
+
+def _get_configured_api_token():
+    cfg = get_config()
+    web_cfg = getattr(cfg, "web", None)
+    return getattr(web_cfg, "api_token", None) if web_cfg else None
+
+
+async def require_api_auth(
+    authorization: Optional[str] = Header(default=None),
+    x_api_token: Optional[str] = Header(default=None, alias="X-API-Token"),
+):
+    """Require bearer or X-API-Token when web.api_token is configured."""
+    configured_token = _get_configured_api_token()
+    if not configured_token:
+        return
+    supplied_token = None
+    if authorization and authorization.lower().startswith("bearer "):
+        supplied_token = authorization[7:].strip()
+    elif x_api_token:
+        supplied_token = x_api_token.strip()
+    if supplied_token != configured_token:
+        raise HTTPException(status_code=401, detail="Unauthorized", headers={"WWW-Authenticate": "Bearer"})
 
 def _ensure_executor_running():
     if not _executor_started.is_set():
@@ -86,7 +112,7 @@ class DownloadRequest(BaseModel):
     output_template: Optional[str] = Field(default=None, max_length=256)
 
 class BatchRequest(BaseModel):
-    urls: list[str] = Field(max_length=100)
+    urls: list[str] = Field(min_length=1, max_length=100)
     output_path: Optional[str] = Field(default=None, max_length=512)
     only_audio: bool = False
     quality: str = "best"
@@ -99,6 +125,17 @@ class BatchRequest(BaseModel):
     sponsorblock: bool = False
     output_template: Optional[str] = Field(default=None, max_length=256)
     workers: int = 3
+
+    @field_validator("urls")
+    @classmethod
+    def _validate_urls(cls, urls: list[str]) -> list[str]:
+        normalized_urls: list[str] = []
+        for raw_url in urls:
+            url = normalize_url(str(raw_url).strip())
+            if not validate_url(url):
+                raise ValueError(f"Invalid URL in batch request: {raw_url}")
+            normalized_urls.append(url)
+        return normalized_urls
 
 class PlaylistRequest(BaseModel):
     url: str = Field(max_length=2048)
@@ -113,6 +150,27 @@ class PlaylistRequest(BaseModel):
     subtitles: bool | dict = False
     sponsorblock: bool = False
     output_template: Optional[str] = Field(default=None, max_length=256)
+
+
+def _resolve_download_profile(req: DownloadRequest) -> tuple[bool, str, str, dict | None, str | None]:
+    """Resolve effective download fields with optional preset support."""
+    subtitles_cfg = _resolve_subtitles_request(req.subtitles)
+    output_template = req.output_template
+    only_audio = req.only_audio
+    audio_format = req.audio_format
+    audio_quality = req.audio_quality
+
+    preset = PRESET_PROFILES.get(req.preset)
+    if preset:
+        only_audio = bool(preset.get("only_audio", only_audio))
+        audio_format = str(preset.get("audio_format", audio_format))
+        audio_quality = str(preset.get("audio_quality", audio_quality))
+        subtitles_cfg = preset.get("subtitles", subtitles_cfg)
+        preset_output_template = preset.get("output_template")
+        if preset_output_template is not None:
+            output_template = str(preset_output_template)
+
+    return only_audio, audio_format, audio_quality, subtitles_cfg, output_template
 
 
 def _resolve_subtitles_request(subtitles):
@@ -146,23 +204,23 @@ async def queue_download(req: DownloadRequest):
     _safe_output_path(output, output_base)
     priority_map = {"low": Priority.LOW, "normal": Priority.NORMAL, "high": Priority.HIGH, "critical": Priority.CRITICAL}
     priority = priority_map.get(req.priority, Priority.NORMAL)
-    subtitles_cfg = _resolve_subtitles_request(req.subtitles)
+    only_audio, audio_format, audio_quality, subtitles_cfg, output_template = _resolve_download_profile(req)
     sponsorblock_cfg = {"enabled": True} if req.sponsorblock else None
     item = manager.queue_download(
         url=url,
         output_path=str(output),
         format_id=req.format_id,
-        only_audio=req.only_audio,
+        only_audio=only_audio,
         priority=priority,
         quality=req.quality,
         hdr=req.hdr,
         dolby=req.dolby,
-        audio_format=req.audio_format,
-        audio_quality=req.audio_quality,
+        audio_format=audio_format,
+        audio_quality=audio_quality,
         audio_selector=req.audio_selector,
         subtitles=subtitles_cfg,
         sponsorblock=sponsorblock_cfg,
-        output_template=req.output_template,
+        output_template=output_template,
     )
     _ensure_executor_running()
     return {"task_id": item.task_id, "url": item.url, "status": item.status.value, "message": "Download queued successfully"}
@@ -178,23 +236,21 @@ async def batch_download(req: BatchRequest):
     subtitles_cfg = _resolve_subtitles_request(req.subtitles)
     sponsorblock_cfg = {"enabled": True} if req.sponsorblock else None
     for url in req.urls:
-        url = normalize_url(url)
-        if validate_url(url):
-            item = manager.queue_download(
-                url=url,
-                output_path=str(output),
-                only_audio=req.only_audio,
-                quality=req.quality,
-                hdr=req.hdr,
-                dolby=req.dolby,
-                audio_format=req.audio_format,
-                audio_quality=req.audio_quality,
-                audio_selector=req.audio_selector,
-                subtitles=subtitles_cfg,
-                sponsorblock=sponsorblock_cfg,
-                output_template=req.output_template,
-            )
-            items.append({"task_id": item.task_id, "url": item.url})
+        item = manager.queue_download(
+            url=url,
+            output_path=str(output),
+            only_audio=req.only_audio,
+            quality=req.quality,
+            hdr=req.hdr,
+            dolby=req.dolby,
+            audio_format=req.audio_format,
+            audio_quality=req.audio_quality,
+            audio_selector=req.audio_selector,
+            subtitles=subtitles_cfg,
+            sponsorblock=sponsorblock_cfg,
+            output_template=req.output_template,
+        )
+        items.append({"task_id": item.task_id, "url": item.url})
     manager.config["concurrent_workers"] = req.workers
     _ensure_executor_running()
     return {"queued": len(items), "items": items}

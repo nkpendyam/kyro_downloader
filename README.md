@@ -54,7 +54,7 @@ Supports: Videos, Audio, Stories, Posts, Reels/Shorts, Live Streams, HDR, Dolby 
 - **Auto Format Detection** - Automatically detects available qualities, HDR, Dolby, audio codecs
 - **Smart Quality Labels** - Shows "8K HDR + Dolby", "4K HDR", "1080p" based on what's actually available
 - **Full Audio Spectrum** - 11 presets from 64kbps (Voice) to Lossless (FLAC/ALAC/WAV)
-- **Plugin System** - Auto-discover and manage plugins (Auto Compress, Auto Convert, Auto Organize, Auto Subtitles)
+- **Plugin System** - Auto-discover and manage plugins (Auto Compress, Auto Convert, Auto Organize, Auto Thumbnail, Auto Subtitles)
 - **Download Scheduling** - Schedule downloads for specific times with repeat options
 - **Channel Subscriptions** - Subscribe to channels for automatic new video detection
 
@@ -92,6 +92,74 @@ docker run kyro-downloader --help
 curl -sSL https://raw.githubusercontent.com/nkpendyam/kyro_downloader/main/install.sh | bash
 ```
 
+## How To Use
+
+### CLI
+Use the CLI when you want speed, scripting, or repeatable presets.
+
+```bash
+kyro download "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+kyro download URL --preset voice-optimized
+kyro mp3 URL --preset podcast-fast
+kyro playlist URL -w 5 --subs
+kyro batch urls.txt --preset music-lossless
+```
+
+Useful rules:
+- `download` is for video-oriented downloads and supports subtitles, HDR, Dolby, SponsorBlock, and quality selection.
+- `mp3` is for audio-only workflows and supports smart audio selection with codec preference.
+- `playlist` and `batch` reuse the same download engine so presets, subtitles, and output naming stay consistent.
+- `info` shows available formats and subtitles before you download.
+
+### GUI
+Use the GUI when you want a visual workflow with presets and live progress.
+
+```bash
+python -m src.gui.gui_main
+```
+
+Workflow:
+1. Paste a URL and click `Fetch Info`.
+2. Pick a quality or preset such as `Voice Optimized`, `Music Lossless`, or `Podcast Fast`.
+3. Toggle subtitles and embed options if needed.
+4. Click `Download` or `Queue Download`.
+
+The GUI uses the same downloader core as the CLI, so output templates, subtitles, and audio selection behave the same way.
+
+### TUI
+Use the TUI when you want keyboard-first control in a terminal window.
+
+```bash
+kyro tui
+```
+
+The TUI supports the same download engine, queue controls, and info lookup, but keeps the interaction lightweight for terminal users.
+
+### Web UI
+Use the Web UI when you want browser-based control or want the browser extension to send jobs to Kyro.
+
+```bash
+kyro web --port 8000
+```
+
+Then open `http://127.0.0.1:8000`.
+
+The Web UI supports:
+- Queueing videos, playlists, and batch jobs
+- Subtitle and SponsorBlock payloads
+- Quality, HDR, Dolby, and audio format settings
+- Real-time progress over WebSocket
+
+### Browser Extension
+Use the extension when you want one-click downloads from a media page.
+
+1. Start Kyro Web UI first.
+2. Load the Chrome or Firefox extension as an unpacked extension.
+3. Open a supported media page.
+4. Use the popup or injected page button to send the current URL to Kyro.
+
+The popup now includes preset selection, so you can send `voice-optimized`, `music-lossless`, or `podcast-fast` jobs without leaving the page.
+
 ## CLI Quick Reference
 
 ```bash
@@ -120,6 +188,43 @@ kyro                           # Interactive mode
 ```
 
 See [CLI Reference](docs/cli_reference.md) for all commands and flags.
+
+## Auto Updating
+
+Kyro has two update stories:
+
+- `auto_update` in config controls yt-dlp checks at startup.
+- `kyro --update` forces a manual yt-dlp upgrade.
+
+What this means in practice:
+- Kyro does not silently replace its own app binary during normal use.
+- Kyro does refresh yt-dlp because yt-dlp is the extraction engine underneath the app.
+- If you disable `auto_update`, downloads still work, but Kyro will skip the startup update check.
+
+If you need the latest application release, use the GitHub Releases page or rebuild from source.
+
+## Why yt-dlp
+
+Kyro depends on yt-dlp because yt-dlp provides the actual site extractors, media format discovery, subtitle handling, and download primitives for 1000+ platforms.
+
+Kyro adds the layer around it:
+- CLI, GUI, TUI, Web UI, and browser extension entry points
+- Presets, queues, progress tracking, and output templates
+- Configuration, plugins, and archive/history tracking
+- WebSocket progress and browser-triggered downloads
+
+Without yt-dlp, Kyro would lose the extractor coverage that makes the project useful.
+
+## Compared To Other Tools
+
+| Tool | Strength | Tradeoff |
+|------|----------|----------|
+| Kyro | Best balance of extractor coverage, presets, multiple UIs, and automation | Depends on yt-dlp for the extractor layer |
+| yt-dlp CLI | Maximum extractor power and flexibility | No native GUI/TUI/Web/extension layer |
+| 4K Video Downloader-style apps | Polished desktop experience | Less scriptable and less extensible |
+| JDownloader-style apps | Heavy automation and download management | More general-purpose, less media-workflow focused |
+
+The practical difference is that Kyro keeps the yt-dlp engine, but adds a friendlier workflow layer around it.
 
 ## Documentation
 
@@ -173,7 +278,7 @@ src/
 ├── cli/            # 20+ CLI commands with rich formatting, interactive mode
 ├── gui/            # CustomTkinter desktop app (7 tabs, smart quality selector)
 ├── ui/             # TUI (Textual) and Web (FastAPI + WebSocket)
-└── plugins/        # Plugin system (loader, API, 4 builtin plugins)
+└── plugins/        # Plugin system (loader, API, 5 builtin plugins)
 ```
 
 ## License

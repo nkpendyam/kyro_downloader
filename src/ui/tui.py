@@ -1,4 +1,6 @@
 """Textual TUI application."""
+import os
+import argparse
 import threading
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, ScrollableContainer
@@ -9,9 +11,11 @@ from src import __version__
 from src.config.manager import load_config
 from src.core.download_manager import DownloadManager
 from src.core.downloader import get_video_info
+from src.services.presets import PresetsManager
 from src.utils.validation import validate_url, validate_output_path
 from src.utils.platform import normalize_url
 from src.ui.themes import get_theme
+from src.utils.ytdlp_updater import auto_update_on_startup
 
 class KyroApp(App):
     CSS = """
@@ -40,7 +44,8 @@ class KyroApp(App):
         super().__init__()
         self.config = load_config()
         self.manager = DownloadManager(self.config.model_dump())
-        self.theme = get_theme(self.config.ui.theme)
+        self.ui_theme = get_theme(self.config.ui.theme)
+        self.presets_manager = PresetsManager()
         self.current_info = None
 
     def compose(self) -> ComposeResult:
@@ -49,6 +54,7 @@ class KyroApp(App):
             Static(f"[bold cyan]Kyro Downloader v{__version__}[/bold cyan]", id="header-panel"),
             Input(placeholder="Enter URL...", id="url-input"),
             Select([("Video", "video"), ("MP3", "mp3"), ("Playlist", "playlist"), ("Batch", "batch")], value="video", id="mode-select", prompt="Select mode"),
+            Select([("None", "None")] + [(name, name) for name in self.presets_manager.get_all_presets().keys()], value="None", id="preset-select", prompt="Select preset"),
             Input(placeholder=f"Output: {self.config.general.output_path}", id="output-input"),
             Horizontal(Button("Download", id="btn-download", variant="primary"), Button("Queue", id="btn-queue", variant="success"), Button("Info", id="btn-info", variant="default"), Button("Clear", id="btn-clear", variant="error"), id="action-buttons"),
             ScrollableContainer(Static("Video info will appear here...", id="info-panel"), Static("Progress: Waiting...", id="progress-panel"), DataTable(id="queue-table")),
@@ -83,18 +89,33 @@ class KyroApp(App):
             self.notify(f"Invalid URL: {url}", severity="error")
             return
         mode = self.query_one("#mode-select", Select).value
+        preset_name = self.query_one("#preset-select", Select).value
+        preset = self.presets_manager.get_preset(preset_name) if preset_name and preset_name != "None" else None
         output = self.query_one("#output-input", Input).value.strip()
         if not output: output = self.config.general.output_path
         output = validate_output_path(output)
         self.notify(f"Starting download: {url}", severity="information")
         def _download_task():
             try:
+                cfg = self.config.model_dump()
+                if preset:
+                    cfg["output_template"] = preset.get("output_template")
+                    cfg["subtitles"] = preset.get("subtitles", cfg.get("subtitles"))
                 if mode == "mp3":
-                    self.manager.config["audio_format"] = "mp3"
+                    cfg["only_audio"] = True
+                    if preset and preset.get("audio_format"):
+                        cfg["audio_format"] = preset["audio_format"]
+                    else:
+                        cfg["audio_format"] = "mp3"
+                    if preset and preset.get("audio_quality"):
+                        cfg["audio_quality"] = preset["audio_quality"]
+                    self.manager.config.update(cfg)
                     self.manager.download_now(url, str(output), only_audio=True)
                 elif mode == "playlist":
+                    self.manager.config.update(cfg)
                     self.manager.download_playlist(url, str(output))
                 else:
+                    self.manager.config.update(cfg)
                     self.manager.download_now(url, str(output))
                 self.call_from_thread(self.notify, "Download complete!", severity="success")
             except Exception as e:
@@ -147,7 +168,20 @@ class KyroApp(App):
             self.notify("Please enter a URL first", severity="error")
             return
         try:
-            item = self.manager.queue_download(url)
+            preset_name = self.query_one("#preset-select", Select).value
+            preset = self.presets_manager.get_preset(preset_name) if preset_name and preset_name != "None" else None
+            cfg = self.config.model_dump()
+            if preset:
+                cfg["output_template"] = preset.get("output_template")
+                cfg["subtitles"] = preset.get("subtitles", cfg.get("subtitles"))
+                if preset.get("only_audio"):
+                    cfg["only_audio"] = True
+                if preset.get("audio_format"):
+                    cfg["audio_format"] = preset["audio_format"]
+                if preset.get("audio_quality"):
+                    cfg["audio_quality"] = preset["audio_quality"]
+            self.manager.config.update(cfg)
+            item = self.manager.queue_download(url, only_audio=bool(cfg.get("only_audio", False)))
             table = self.query_one("#queue-table", DataTable)
             table.add_row(item.task_id[:8], url[:50] + "..." if len(url) > 50 else url, item.status.value, item.priority.name)
             self.notify(f"Queued: {item.task_id[:8]}", severity="success")
@@ -155,8 +189,43 @@ class KyroApp(App):
             self.notify(f"Queue error: {e}", severity="error")
 
 def run_tui():
+    config = load_config()
+    if getattr(config.general, "auto_update", False) and not os.environ.get("PYTEST_CURRENT_TEST"):
+        auto_update_on_startup(check_only=False)
+    app = KyroApp()
+    app.run()
+
+
+def create_parser() -> argparse.ArgumentParser:
+    """Create TUI CLI parser."""
+    parser = argparse.ArgumentParser(description="Run Kyro Downloader Textual TUI")
+    parser.add_argument("-v", "--version", action="store_true", help="Show version and exit")
+    parser.add_argument("--no-auto-update", action="store_true", help="Skip startup auto-update check")
+    return parser
+
+
+def main() -> None:
+    """CLI entrypoint for TUI module."""
+    args = create_parser().parse_args()
+    if args.version:
+        print(f"Kyro Downloader v{__version__}")
+        return
+
+    if args.no_auto_update:
+        os.environ["KYRO_SKIP_AUTO_UPDATE"] = "1"
+
+    config = load_config()
+    should_auto_update = (
+        not args.no_auto_update
+        and not os.environ.get("KYRO_SKIP_AUTO_UPDATE")
+        and getattr(config.general, "auto_update", False)
+        and not os.environ.get("PYTEST_CURRENT_TEST")
+    )
+    if should_auto_update:
+        auto_update_on_startup(check_only=False)
+
     app = KyroApp()
     app.run()
 
 if __name__ == "__main__":
-    run_tui()
+    main()

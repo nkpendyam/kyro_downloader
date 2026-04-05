@@ -1,4 +1,5 @@
 """Geo-restriction bypass service."""
+
 import requests
 from src.utils.logger import get_logger
 logger = get_logger(__name__)
@@ -11,23 +12,23 @@ COUNTRY_CODES = {
     "SE": "Sweden", "NO": "Norway", "DK": "Denmark", "FI": "Finland",
 }
 
-def get_proxy_for_country(country_code):
+def get_proxy_for_country(country_code: str) -> str | None:
     proxy_url = __import__("os").environ.get("KYRO_PROXY_URL")
     if proxy_url:
         return proxy_url
     return None
 
-def build_geo_opts(proxy_url=None, geo_bypass_country=None):
-    opts = {}
+def build_geo_opts(proxy_url: str | None = None, geo_bypass_country: str | None = None) -> dict[str, str]:
+    opts: dict[str, str] = {}
     if proxy_url:
         opts["proxy"] = proxy_url
     if geo_bypass_country and geo_bypass_country in COUNTRY_CODES:
         opts["geo_bypass_country"] = geo_bypass_country
     return opts
 
-def check_geo_restriction(url, country_code=None):
+def check_geo_restriction(url: str, country_code: str | None = None) -> bool:
     try:
-        headers = {}
+        headers: dict[str, str] = {}
         if country_code and country_code in COUNTRY_CODES:
             headers["Accept-Language"] = f"{country_code.lower()}-{country_code.upper()}"
         response = requests.get(url, headers=headers, timeout=10, allow_redirects=True, stream=True)

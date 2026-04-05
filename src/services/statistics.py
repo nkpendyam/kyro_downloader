@@ -1,4 +1,6 @@
 """Download statistics and analytics service."""
+from typing import Any
+
 import json
 import time
 from pathlib import Path
@@ -22,18 +24,18 @@ class DownloadStats:
     first_download: str = ""
     last_download: str = ""
     @property
-    def success_rate(self):
+    def success_rate(self) -> float:
         if self.total_downloads == 0: return 0.0
         return (self.successful / self.total_downloads) * 100
     @property
-    def total_gb(self): return self.total_bytes / (1024 ** 3)
+    def total_gb(self) -> float: return self.total_bytes / (1024 ** 3)
     @property
-    def avg_speed_mbps(self):
+    def avg_speed_mbps(self) -> float:
         if self.total_time_seconds == 0: return 0.0
         return (self.total_bytes * 8) / (self.total_time_seconds * 1_000_000)
 
 class StatsTracker:
-    def __init__(self, stats_file=None):
+    def __init__(self, stats_file: str | None = None) -> None:
         if not stats_file:
             stats_dir = Path.home() / ".config" / "kyro"
             stats_dir.mkdir(parents=True, exist_ok=True)
@@ -41,7 +43,7 @@ class StatsTracker:
         self._stats_file = Path(stats_file)
         self._stats = self._load()
 
-    def _load(self):
+    def _load(self) -> DownloadStats:
         if self._stats_file.exists():
             try:
                 with open(self._stats_file, "r") as f:
@@ -50,7 +52,7 @@ class StatsTracker:
                 logger.warning(f"Failed to load stats: {e}")
         return DownloadStats()
 
-    def _save(self):
+    def _save(self) -> None:
         try:
             self._stats_file.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._stats_file.with_suffix(".tmp")
@@ -59,10 +61,8 @@ class StatsTracker:
             tmp.replace(self._stats_file)
         except IOError as e:
             logger.error(f"Failed to save stats: {e}")
-        except IOError as e:
-            logger.error(f"Failed to save stats: {e}")
 
-    def record_download(self, success, bytes_downloaded=0, duration=0.0, format_id="", platform="", retries=0, speed_mbps=0.0, wall_time=0.0):
+    def record_download(self, success: bool, bytes_downloaded: int = 0, duration: float = 0.0, format_id: str = "", platform: str = "", retries: int = 0, speed_mbps: float = 0.0, wall_time: float = 0.0) -> None:
         self._stats.total_downloads += 1
         self._stats.total_time_seconds += wall_time if wall_time > 0 else duration
         if success:
@@ -78,13 +78,13 @@ class StatsTracker:
         self._stats.last_download = now
         self._save()
 
-    def get_stats(self): return self._stats
+    def get_stats(self) -> DownloadStats: return self._stats
 
-    def get_summary(self):
+    def get_summary(self) -> dict[str, Any]:
         s = self._stats
         return {"total_downloads": s.total_downloads, "successful": s.successful, "failed": s.failed, "success_rate": f"{s.success_rate:.1f}%", "total_data": f"{s.total_gb:.2f} GB", "avg_speed": f"{s.avg_speed_mbps:.1f} Mbps", "peak_speed": f"{s.peak_speed_mbps:.1f} Mbps", "total_time": f"{s.total_time_seconds / 3600:.1f} hours", "total_retries": s.retries_total, "first_download": s.first_download, "last_download": s.last_download, "top_formats": dict(sorted(s.formats_used.items(), key=lambda x: x[1], reverse=True)[:5]), "top_platforms": dict(sorted(s.platforms_used.items(), key=lambda x: x[1], reverse=True)[:5])}
 
-    def reset(self):
+    def reset(self) -> None:
         self._stats = DownloadStats()
         self._save()
         logger.info("Statistics reset")

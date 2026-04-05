@@ -24,4 +24,5 @@ class TestWebUI:
         app = create_app()
         routes = [r.path for r in app.routes if hasattr(r, "path")]
         assert "/" in routes
+        assert "/health" in routes
         assert any("/api" in r for r in routes)

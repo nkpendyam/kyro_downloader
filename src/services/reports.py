@@ -1,4 +1,5 @@
 """Download reports - generate HTML reports of download history."""
+
 import html
 from pathlib import Path
 from datetime import datetime
@@ -9,7 +10,7 @@ logger = get_logger(__name__)
 
 REPORTS_DIR = Path.home() / ".config" / "kyro" / "reports"
 
-def generate_html_report(output_path=None, days=30):
+def generate_html_report(output_path: str | None = None, days: int = 30) -> str:
     """Generate an HTML report of download history."""
     archive = DownloadArchive()
     stats = StatsTracker()
@@ -49,8 +50,11 @@ th {{ background: #16213e; }}
         REPORTS_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(REPORTS_DIR / f"download_report_{datetime.now().strftime('%Y%m%d')}.html")
 
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(report_html)
-
-    logger.info(f"Report generated: {output_path}")
-    return output_path
+    try:
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(report_html)
+        logger.info(f"Report generated: {output_path}")
+        return output_path
+    except OSError as e:
+        logger.error(f"Failed to write report {output_path}: {e}")
+        return ""

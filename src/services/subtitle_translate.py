@@ -1,11 +1,13 @@
 """Subtitle translation service."""
+from pathlib import Path
+
 import requests
 from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 TRANSLATION_API = "https://api.mymemory.translated.net/get"
 
-def translate_subtitle(text, source_lang="en", target_lang="es"):
+def translate_subtitle(text: str, source_lang: str = "en", target_lang: str = "es") -> str:
     """Translate subtitle text using MyMemory API (free, no key required).
 
     Args:
@@ -28,7 +30,7 @@ def translate_subtitle(text, source_lang="en", target_lang="es"):
         logger.warning(f"Subtitle translation failed: {e}")
         return text
 
-def translate_srt_file(input_path, output_path, source_lang="en", target_lang="es"):
+def translate_srt_file(input_path: str | Path, output_path: str | Path, source_lang: str = "en", target_lang: str = "es") -> bool:
     """Translate an SRT subtitle file.
 
     Args:

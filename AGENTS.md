@@ -9,7 +9,7 @@
 ## How to implement a new feature
 1. If it is a new capability (e.g. new site-specific logic, new post-processing) → add a file in `src/services/`
 2. If it is a new CLI command → add a file in `src/cli/commands/` and register it in `src/cli/__init__.py`
-3. If it is a new GUI page or component → add to `src/gui/pages/` or `src/gui/components/`
+3. If it is a new GUI feature or component → add to `src/gui/app.py` or `src/gui/components/`
 4. If it is a new Web API route → add to `src/ui/web/routes.py` or a new routes file
 5. Always write the corresponding test in `tests/test_<module>.py`
 

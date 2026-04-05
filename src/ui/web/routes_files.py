@@ -1,6 +1,5 @@
 """File browser routes for web UI."""
 import os
-import html
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
@@ -15,7 +14,9 @@ def _safe_path(user_path: str) -> Path:
     if not user_path:
         return DOWNLOAD_DIR
     target = (DOWNLOAD_DIR / user_path).resolve()
-    if not str(target).startswith(str(DOWNLOAD_DIR)):
+    try:
+        target.relative_to(DOWNLOAD_DIR)
+    except ValueError:
         raise HTTPException(status_code=403, detail="Access denied: path traversal detected")
     return target
 
@@ -29,13 +30,13 @@ async def list_files(path: str = ""):
     for entry in sorted(target.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
         stat = entry.stat()
         items.append({
-            "name": html.escape(entry.name),
-            "path": html.escape(str(entry.relative_to(DOWNLOAD_DIR))),
+            "name": entry.name,
+            "path": str(entry.relative_to(DOWNLOAD_DIR)),
             "is_dir": entry.is_dir(),
             "size": stat.st_size if entry.is_file() else None,
             "modified": stat.st_mtime,
         })
-    return {"path": html.escape(str(target)), "items": items}
+    return {"path": str(target), "items": items}
 
 
 @router.get("/download/{filename:path}")
@@ -57,4 +58,4 @@ async def delete_file(filename: str):
         shutil.rmtree(filepath)
     else:
         filepath.unlink()
-    return {"status": "deleted", "path": html.escape(filename)}
+    return {"status": "deleted", "path": filename}

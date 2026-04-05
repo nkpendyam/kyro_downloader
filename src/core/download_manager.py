@@ -36,7 +36,12 @@ class DownloadManager:
         if not validate_url(url):
             raise ValueError(f"Invalid URL: {url}")
         output = validate_output_path(output_path or self.config.get("output_path", "./downloads"))
-        info = get_video_info(url, cookies_file=self.config.get("cookies_file"), proxy=self.config.get("proxy"))
+        info = get_video_info(
+            url,
+            cookies_file=self.config.get("cookies_file"),
+            cookies_from_browser=self.config.get("cookies_from_browser"),
+            proxy=self.config.get("proxy"),
+        )
         self._current_info = info
         unique_name = None
         if self.config.get("check_duplicates", True) and not info.is_playlist:
@@ -76,7 +81,27 @@ class DownloadManager:
         return item
 
     def queue_batch(self, urls, output_path=None, format_id=None, only_audio=False, priority=Priority.NORMAL, quality=None, hdr=False, dolby=False, audio_format=None, audio_quality=None, audio_selector=None, subtitles=None, sponsorblock=None, output_template=None):
-        return [self.queue_download(url, output_path=output_path, format_id=format_id, only_audio=only_audio, priority=priority, quality=quality, hdr=hdr, dolby=dolby, audio_format=audio_format, audio_quality=audio_quality, audio_selector=audio_selector, subtitles=subtitles, sponsorblock=sponsorblock, output_template=output_template) for url in urls]
+        items = []
+        for url in urls:
+            items.append(
+                self.queue_download(
+                    url,
+                    output_path=output_path,
+                    format_id=format_id,
+                    only_audio=only_audio,
+                    priority=priority,
+                    quality=quality,
+                    hdr=hdr,
+                    dolby=dolby,
+                    audio_format=audio_format,
+                    audio_quality=audio_quality,
+                    audio_selector=audio_selector,
+                    subtitles=subtitles,
+                    sponsorblock=sponsorblock,
+                    output_template=output_template,
+                )
+            )
+        return items
 
     def queue_from_file(self, filepath, **kwargs):
         try:
@@ -145,7 +170,12 @@ class DownloadManager:
         url = normalize_url(url)
         output = validate_output_path(output_path or self.config.get("output_path", "./downloads"))
         try:
-            info = get_video_info(url)
+            info = get_video_info(
+                url,
+                cookies_file=self.config.get("cookies_file"),
+                cookies_from_browser=self.config.get("cookies_from_browser"),
+                proxy=self.config.get("proxy"),
+            )
             self._current_info = info
             playlist_count = len(info.entries) if info.entries else 0
             cfg = self._build_download_config()
@@ -233,6 +263,7 @@ class DownloadManager:
             "rate_limit": self.config.get("rate_limit"),
             "proxy": self.config.get("proxy"),
             "cookies_file": self.config.get("cookies_file"),
+            "cookies_from_browser": self.config.get("cookies_from_browser"),
             "prefer_format": self.config.get("prefer_format", "mp4"),
             "fragment_retries": self.config.get("fragment_retries", 10),
             "concurrent_fragments": self.config.get("concurrent_fragments", 4),

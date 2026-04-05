@@ -4,6 +4,7 @@ import time
 import threading
 from enum import Enum
 from dataclasses import dataclass, field
+from typing import Any
 from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
@@ -27,16 +28,16 @@ class QueueItem:
     task_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     status: QueueStatus = QueueStatus.PENDING
     priority: Priority = Priority.NORMAL
-    format_id: str = None
+    format_id: str | None = None
     only_audio: bool = False
     output_path: str = ""
-    config: dict = field(default_factory=dict)
+    config: dict[str, Any] = field(default_factory=dict)
     created_at: float = field(default_factory=lambda: time.time())
     started_at: float = 0.0
     completed_at: float = 0.0
-    error_message: str = None
+    error_message: str | None = None
     retries: int = 0
-    metadata: dict = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     _cancel_event: threading.Event = field(default_factory=threading.Event, repr=False, compare=False)
     def __lt__(self, other):
         if self.priority.value != other.priority.value: return self.priority.value > other.priority.value

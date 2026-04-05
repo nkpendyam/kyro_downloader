@@ -1,10 +1,11 @@
 """Netrc authentication service."""
+
 import os
 import netrc
 from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
-def get_netrc_credentials(machine):
+def get_netrc_credentials(machine: str) -> dict[str, str] | None:
     try:
         netrc_path = os.path.expanduser("~/.netrc")
         if not os.path.exists(netrc_path): return None
@@ -17,8 +18,8 @@ def get_netrc_credentials(machine):
         logger.warning(f"Netrc auth failed: {e}")
         return None
 
-def build_auth_opts(username=None, password=None, netrc_machine=None):
-    opts = {}
+def build_auth_opts(username: str | None = None, password: str | None = None, netrc_machine: str | None = None) -> dict[str, str]:
+    opts: dict[str, str] = {}
     if netrc_machine:
         creds = get_netrc_credentials(netrc_machine)
         if creds:

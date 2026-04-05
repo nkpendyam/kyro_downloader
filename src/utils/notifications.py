@@ -6,21 +6,25 @@ logger = get_logger(__name__)
 
 def send_notification(title, message, urgency="normal"):
     system = platform.system()
+    safe_title = str(title)
+    safe_message = str(message)
     try:
         if system == "Windows":
             from plyer import notification
-            notification.notify(title=title, message=message, app_name="Kyro Downloader", timeout=10)
+            notification.notify(title=safe_title, message=safe_message, app_name="Kyro Downloader", timeout=10)
         elif system == "Darwin":
-            # Use stdin to prevent command injection via title/message
-            script = f'display notification "{message}" with title "{title}"'
+            script = (
+                "on run argv\n"
+                "display notification (item 1 of argv) with title (item 2 of argv)\n"
+                "end run"
+            )
             subprocess.run(
-                ["osascript", "-e", script],
-                capture_output=True, timeout=5, check=True,
-                input=message.encode()
+                ["osascript", "-e", script, safe_message, safe_title],
+                capture_output=True, timeout=5, check=True
             )
         else:
             subprocess.run(
-                ["notify-send", "-u", urgency, "-a", "Kyro Downloader", title, message],
+                ["notify-send", "-u", urgency, "-a", "Kyro Downloader", safe_title, safe_message],
                 capture_output=True, timeout=5, check=True
             )
         return True

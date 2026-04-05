@@ -7,7 +7,7 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 # Only these builtin plugins are allowed by default
-ALLOWED_BUILTIN_PLUGINS = {"auto_compress", "auto_convert", "auto_organize", "subtitle_auto"}
+ALLOWED_BUILTIN_PLUGINS = {"auto_compress", "auto_convert", "auto_organize", "auto_thumbnail", "subtitle_auto"}
 
 class PluginLoader:
     def __init__(self, allow_user_plugins=False):

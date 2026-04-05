@@ -25,6 +25,7 @@ class DownloadConfig(BaseModel):
     rate_limit: Optional[str] = None
     proxy: Optional[str] = None
     cookies_file: Optional[str] = None
+    cookies_from_browser: Optional[str] = None
     timeout: int = Field(default=300, ge=30)
     fragment_retries: int = Field(default=10, ge=0)
     concurrent_fragment_downloads: int = Field(default=4, ge=1)
@@ -86,7 +87,8 @@ class WebConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
     debug: bool = False
-    cors_origins: list[str] = ["*"]
+    cors_origins: list[str] = []
+    api_token: Optional[str] = None
 
 class AppConfig(BaseModel):
     general: GeneralConfig = Field(default_factory=GeneralConfig)

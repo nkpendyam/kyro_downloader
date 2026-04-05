@@ -57,10 +57,11 @@ class ProgressTracker:
             except Exception as e: logger.warning(f"Progress callback error: {e}")
         if broadcast_data:
             try:
-                from src.ui.web.websocket import broadcast_progress
+                from src.ui.web.websocket import broadcast_progress, get_event_loop
                 import asyncio
-                try: loop = asyncio.get_running_loop()
-                except RuntimeError: return
+                loop = get_event_loop()
+                if not loop or not loop.is_running():
+                    return
                 asyncio.run_coroutine_threadsafe(broadcast_progress(task_id, broadcast_data), loop)
             except Exception as e:
                 logger.debug(f"WebSocket broadcast failed: {e}")

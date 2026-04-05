@@ -30,4 +30,5 @@ class MetadataEditor:
                 logger.info(f"Metadata edited: {filepath}")
                 return True
             return False
-        except: return False
+        except (OSError, subprocess.SubprocessError, TimeoutError):
+            return False

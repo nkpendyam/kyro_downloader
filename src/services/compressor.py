@@ -1,11 +1,13 @@
 """Video compression service."""
+from typing import Any
+
 import subprocess
 from pathlib import Path
 from src.utils.logger import get_logger
 from src.utils.ffmpeg import check_ffmpeg
 logger = get_logger(__name__)
 
-def compress_video(input_path, output_path=None, quality="medium", preset="medium", remove_original=False):
+def compress_video(input_path: str | Path, output_path: str | Path | None = None, quality: str = "medium", preset: str = "medium", remove_original: bool = False) -> dict[str, Any] | None:
     if not check_ffmpeg():
         logger.error("FFmpeg not available for compression")
         return None
@@ -36,8 +38,8 @@ def compress_video(input_path, output_path=None, quality="medium", preset="mediu
         logger.error(f"Compression error: {e}")
         return None
 
-def batch_compress(files, quality="medium", preset="medium", remove_original=False):
-    results = []
+def batch_compress(files: list[str | Path], quality: str = "medium", preset: str = "medium", remove_original: bool = False) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
     for f in files:
         result = compress_video(f, quality=quality, preset=preset, remove_original=remove_original)
         results.append({"input": f, "output": result, "success": result is not None})

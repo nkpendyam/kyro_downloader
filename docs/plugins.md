@@ -46,6 +46,7 @@ class MyPlugin(PluginBase):
 | Auto Compress | Compresses videos over 500MB |
 | Auto Convert | Converts downloads to target format |
 | Auto Organize | Organizes by platform and date |
+| Auto Thumbnail | Downloads media thumbnails automatically |
 | Auto Subtitles | Downloads subtitles automatically |
 
 ## Installing User Plugins

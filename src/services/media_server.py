@@ -2,19 +2,19 @@
 import json
 import requests
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Any, Optional, List, Dict
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 class MediaServerConfig:
-    def __init__(self, server_type: str, url: str, token: str, library_name: str = "Downloads"):
+    def __init__(self, server_type: str, url: str, token: str, library_name: str = "Downloads") -> None:
         self.server_type = server_type.lower()
         self.url = url.rstrip("/")
         self.token = token
         self.library_name = library_name
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, str]:
         return {
             "server_type": self.server_type,
             "url": self.url,
@@ -23,7 +23,7 @@ class MediaServerConfig:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "MediaServerConfig":
+    def from_dict(cls, d: dict[str, Any]) -> "MediaServerConfig":
         return cls(
             server_type=d.get("server_type", "plex"),
             url=d.get("url", ""),
@@ -35,7 +35,7 @@ class MediaServerConfig:
 class MediaServerClient:
     SUPPORTED_TYPES = ["plex", "jellyfin"]
 
-    def __init__(self, config: Optional[MediaServerConfig] = None):
+    def __init__(self, config: Optional[MediaServerConfig] = None) -> None:
         self.config = config
         self._state_file = Path.home() / ".config" / "kyro" / "media_server.json"
         self._configs: List[MediaServerConfig] = []
@@ -46,18 +46,18 @@ class MediaServerClient:
             if config_key not in self._loaded:
                 self._configs.append(config)
                 self._loaded.add(config_key)
-                self._loaded.add(config_key)
 
-    def _load_configs(self):
+    def _load_configs(self) -> None:
         try:
             if self._state_file.exists():
                 with open(self._state_file, "r") as f:
                     data = json.load(f)
                 self._configs = [MediaServerConfig.from_dict(c) for c in data.get("servers", [])]
+                self._loaded = {f"{cfg.server_type}:{cfg.url}" for cfg in self._configs}
         except Exception as e:
             logger.warning(f"Failed to load media server configs: {e}")
 
-    def _save_configs(self):
+    def _save_configs(self) -> None:
         try:
             self._state_file.parent.mkdir(parents=True, exist_ok=True)
             with open(self._state_file, "w") as f:
@@ -65,13 +65,18 @@ class MediaServerClient:
         except Exception as e:
             logger.warning(f"Failed to save media server configs: {e}")
 
-    def add_server(self, config: MediaServerConfig):
+    def add_server(self, config: MediaServerConfig) -> None:
+        config_key = f"{config.server_type}:{config.url}"
+        if config_key in self._loaded:
+            return
         self._configs.append(config)
+        self._loaded.add(config_key)
         self._save_configs()
 
     def remove_server(self, index: int) -> bool:
         if 0 <= index < len(self._configs):
-            self._configs.pop(index)
+            removed = self._configs.pop(index)
+            self._loaded.discard(f"{removed.server_type}:{removed.url}")
             self._save_configs()
             return True
         return False
@@ -166,7 +171,7 @@ class MediaServerClient:
     def _notify_jellyfin(self, config: MediaServerConfig) -> bool:
         return self._scan_jellyfin(config)
 
-    def get_server_info(self, config: Optional[MediaServerConfig] = None) -> Optional[Dict]:
+    def get_server_info(self, config: Optional[MediaServerConfig] = None) -> Optional[Dict[str, Any]]:
         cfg = config or self.config
         if not cfg:
             return None
@@ -180,7 +185,7 @@ class MediaServerClient:
             logger.warning(f"Failed to get server info: {e}")
             return None
 
-    def _get_plex_info(self, config: MediaServerConfig) -> Dict:
+    def _get_plex_info(self, config: MediaServerConfig) -> Dict[str, Any]:
         headers = {"X-Plex-Token": config.token, "Accept": "application/json"}
         r = requests.get(f"{config.url}/", headers=headers, timeout=10)
         r.raise_for_status()
@@ -192,7 +197,7 @@ class MediaServerClient:
             "platform": data.get("platform", "unknown"),
         }
 
-    def _get_jellyfin_info(self, config: MediaServerConfig) -> Dict:
+    def _get_jellyfin_info(self, config: MediaServerConfig) -> Dict[str, Any]:
         r = requests.get(f"{config.url}/System/Info/Public", timeout=10)
         r.raise_for_status()
         data = r.json()

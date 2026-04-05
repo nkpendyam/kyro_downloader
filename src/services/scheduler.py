@@ -1,4 +1,6 @@
 """Download scheduling service."""
+from typing import Any
+
 import json
 import time
 import threading
@@ -8,7 +10,7 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 class DownloadScheduler:
-    def __init__(self, schedule_file=None):
+    def __init__(self, schedule_file: str | None = None) -> None:
         if not schedule_file:
             schedule_dir = Path.home() / ".config" / "kyro"
             schedule_dir.mkdir(parents=True, exist_ok=True)
@@ -16,9 +18,9 @@ class DownloadScheduler:
         self._schedule_file = Path(schedule_file)
         self._schedules = self._load()
         self._running = False
-        self._thread = None
+        self._thread: threading.Thread | None = None
 
-    def _load(self):
+    def _load(self) -> list[dict[str, Any]]:
         if self._schedule_file.exists():
             try:
                 with open(self._schedule_file, "r") as f:
@@ -27,7 +29,7 @@ class DownloadScheduler:
                 logger.warning(f"Failed to load schedule file: {e}")
         return []
 
-    def _save(self):
+    def _save(self) -> None:
         try:
             self._schedule_file.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._schedule_file.with_suffix(".tmp")
@@ -36,10 +38,8 @@ class DownloadScheduler:
             tmp.replace(self._schedule_file)
         except IOError as e:
             logger.error(f"Failed to save schedule file: {e}")
-        except IOError as e:
-            logger.error(f"Failed to save schedule file: {e}")
 
-    def add_schedule(self, url, scheduled_time, output_path=None, only_audio=False, format_id=None, repeat="none"):
+    def add_schedule(self, url: str, scheduled_time: str, output_path: str | None = None, only_audio: bool = False, format_id: str | None = None, repeat: str = "none") -> dict[str, Any]:
         schedule = {
             "id": f"schedule_{int(time.time())}_{len(self._schedules)}",
             "url": url, "scheduled_time": scheduled_time, "output_path": output_path,
@@ -52,14 +52,14 @@ class DownloadScheduler:
         logger.info(f"Schedule added: {url} at {scheduled_time}")
         return schedule
 
-    def remove_schedule(self, schedule_id):
+    def remove_schedule(self, schedule_id: str) -> None:
         self._schedules = [s for s in self._schedules if s["id"] != schedule_id]
         self._save()
 
-    def list_schedules(self):
+    def list_schedules(self) -> list[dict[str, Any]]:
         return self._schedules
 
-    def get_due_schedules(self):
+    def get_due_schedules(self) -> list[dict[str, Any]]:
         now = datetime.now()
         due = []
         for s in self._schedules:
@@ -74,7 +74,7 @@ class DownloadScheduler:
                 continue
         return due
 
-    def mark_completed(self, schedule_id):
+    def mark_completed(self, schedule_id: str) -> None:
         for s in self._schedules:
             if s["id"] == schedule_id:
                 s["status"] = "completed"
@@ -85,22 +85,22 @@ class DownloadScheduler:
                 self._save()
                 break
 
-    def _calculate_next_run(self, base_time, repeat):
+    def _calculate_next_run(self, base_time: str, repeat: str) -> str:
         base = datetime.fromisoformat(base_time)
         if repeat == "daily": return (base + timedelta(days=1)).isoformat()
         elif repeat == "weekly": return (base + timedelta(weeks=1)).isoformat()
         elif repeat == "monthly": return (base + timedelta(days=30)).isoformat()
         return base_time
 
-    def start_scheduler(self, callback=None):
+    def start_scheduler(self, callback: Any | None = None) -> None:
         self._running = True
         self._thread = threading.Thread(target=self._run_loop, args=(callback,), daemon=True)
         self._thread.start()
 
-    def stop_scheduler(self):
+    def stop_scheduler(self) -> None:
         self._running = False
 
-    def _run_loop(self, callback=None):
+    def _run_loop(self, callback: Any | None = None) -> None:
         while self._running:
             due = self.get_due_schedules()
             for schedule in due:

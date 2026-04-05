@@ -4,21 +4,22 @@ document.addEventListener("DOMContentLoaded", async () => {
   const statusEl = document.getElementById("status");
   const qualityEl = document.getElementById("video-quality");
   const audioFormatEl = document.getElementById("audio-format");
+  const presetEl = document.getElementById("preset");
 
   if (tab && tab.url) {
     urlDisplay.textContent = tab.url;
   }
 
   document.getElementById("btn-download").addEventListener("click", () => {
-    sendToKyro(tab.url, { quality: qualityEl.value });
+    sendToKyro(tab.url, { quality: qualityEl.value, preset: presetEl.value });
   });
 
   document.getElementById("btn-mp3").addEventListener("click", () => {
-    sendToKyro(tab.url, { mode: "mp3", audio_format: audioFormatEl.value });
+    sendToKyro(tab.url, { mode: "mp3", audio_format: audioFormatEl.value, preset: presetEl.value });
   });
 
   document.getElementById("btn-queue").addEventListener("click", () => {
-    sendToKyro(tab.url, { quality: qualityEl.value });
+    sendToKyro(tab.url, { quality: qualityEl.value, preset: presetEl.value });
   });
 
   async function sendToKyro(url, options) {
@@ -54,6 +55,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         audio_format: options.audio_format || "mp3",
         audio_quality: options.mode === "mp3" ? "192" : "192",
         priority: "normal",
+        preset: options.preset || "none",
       };
 
       const response = await fetch(`${KYRO_API_URL}/api/download`, {

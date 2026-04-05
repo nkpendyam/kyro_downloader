@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 
 from src.cli.__main__ import create_parser
 from src.plugins.api import PluginBase
+from src.plugins.builtin.auto_thumbnail import AutoThumbnailPlugin
 from src.plugins.builtin.subtitle_auto import AutoSubtitlePlugin
 from src.plugins.loader import PluginLoader
 
@@ -106,6 +107,38 @@ class TestSubtitlePlugin:
         assert result == str(tmp_path / "video.mp4")
         assert called["url"] == "https://example.com/watch?v=1"
         assert called["languages"] == ["en"]
+
+
+class TestAutoThumbnailPlugin:
+    def test_auto_thumbnail_plugin_downloads_thumbnail(self, monkeypatch, tmp_path):
+        plugin = AutoThumbnailPlugin()
+
+        class _Info:
+            thumbnail = "https://example.com/thumb.jpg"
+
+        called = {}
+
+        def fake_get_video_info(url):
+            called["url"] = url
+            return _Info()
+
+        def fake_download_thumbnail(url, output_path, filename="thumbnail"):
+            called["thumb_url"] = url
+            called["output_path"] = output_path
+            called["filename"] = filename
+            return tmp_path / f"{filename}.jpg"
+
+        monkeypatch.setattr("src.plugins.builtin.auto_thumbnail.get_video_info", fake_get_video_info)
+        monkeypatch.setattr("src.services.thumbnails.download_thumbnail", fake_download_thumbnail)
+
+        output_file = tmp_path / "video.mp4"
+        output_file.write_text("dummy", encoding="utf-8")
+        result = plugin.on_download_complete("https://example.com/watch?v=1", str(output_file))
+
+        assert result == str(output_file)
+        assert called["url"] == "https://example.com/watch?v=1"
+        assert called["thumb_url"] == "https://example.com/thumb.jpg"
+        assert called["filename"] == "video"
 
 
 class TestCLISubtitleFlags:

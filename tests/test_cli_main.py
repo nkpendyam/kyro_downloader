@@ -80,6 +80,31 @@ def test_create_parser_download_preset_flag() -> None:
     assert args.preset == "voice-optimized"
 
 
+def test_create_parser_download_cookies_from_browser_flag() -> None:
+    """Download command should parse browser-cookie flag."""
+    parser = cli_main.create_parser()
+    args = parser.parse_args(
+        ["download", "https://example.com/video", "--cookies-from-browser", "firefox"]
+    )
+
+    assert args.command == "download"
+    assert args.cookies_from_browser == "firefox"
+
+
+def test_create_parser_playlist_and_batch_cookies_from_browser_flag() -> None:
+    """Playlist and batch commands should parse browser-cookie flag."""
+    parser = cli_main.create_parser()
+    playlist_args = parser.parse_args(
+        ["playlist", "https://example.com/playlist", "--cookies-from-browser", "chrome"]
+    )
+    batch_args = parser.parse_args(
+        ["batch", "urls.txt", "--cookies-from-browser", "edge"]
+    )
+
+    assert playlist_args.cookies_from_browser == "chrome"
+    assert batch_args.cookies_from_browser == "edge"
+
+
 def test_cmd_mp3_builds_expected_subtitle_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     """cmd_mp3 should normalize subtitle settings into manager config."""
     manager = MagicMock()
@@ -243,3 +268,36 @@ def test_cmd_mp3_preset_applies_output_template(monkeypatch: pytest.MonkeyPatch)
 
     assert manager.config["output_template"] == "%(upload_date)s/%(title)s.%(ext)s"
     assert manager.config["subtitles"]["enabled"] is True
+
+
+def test_cmd_mp3_sets_cookies_from_browser(monkeypatch: pytest.MonkeyPatch) -> None:
+    """cmd_mp3 should pass browser cookie preference into manager config."""
+    manager = MagicMock()
+    manager.config = {}
+
+    monkeypatch.setattr("src.cli.__main__.normalize_url", lambda url: url)
+    monkeypatch.setattr("src.cli.__main__.validate_url", lambda url: bool(url))
+    monkeypatch.setattr("src.cli.__main__.validate_output_path", lambda path: path)
+    monkeypatch.setattr("src.cli.__main__.DownloadManager", lambda _cfg: manager)
+
+    args = SimpleNamespace(
+        url="https://example.com/video",
+        output="downloads",
+        format="mp3",
+        quality="192",
+        smart_audio=False,
+        prefer_codec="any",
+        cookies_from_browser="firefox",
+        preset="none",
+        subs=False,
+        subs_lang="en",
+        subs_format="srt",
+        no_auto_subs=False,
+        embed_subs=False,
+    )
+    config = _FakeConfig("downloads")
+    cmd_mp3 = cast(Callable[[Any, Any], None], getattr(cli_main, "cmd_mp3"))
+
+    cmd_mp3(args, config)
+
+    assert manager.config["cookies_from_browser"] == "firefox"

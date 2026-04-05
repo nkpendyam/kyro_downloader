@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Competitor-grade CLI presets: `voice-optimized`, `music-lossless`, `podcast-fast`
 - Preset-driven subtitle defaults and output naming template support in downloader config
 - Web API contract test suite to detect documentation/route drift in CI
-- Desktop GUI (Flet) with tags, presets, history viewer, stats charts
+- Desktop GUI (CustomTkinter) with tags, presets, history viewer, stats charts
 - Multi-language support (25 languages)
 - Accessibility settings (font size, high contrast, color blind modes)
 - Browser extensions (Chrome & Firefox)

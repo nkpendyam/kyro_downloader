@@ -1,21 +1,21 @@
 """Filesize filtering service."""
-def parse_size(size_str):
+def parse_size(size_str: str | None) -> float | None:
     if not size_str: return None
     size_str = size_str.strip().lower()
     multipliers = {"b": 1, "k": 1024, "m": 1024**2, "g": 1024**3, "t": 1024**4}
     for suffix, mult in multipliers.items():
         if size_str.endswith(suffix):
             try: return float(size_str[:-1]) * mult
-            except: return None
+            except ValueError: return None
     try: return float(size_str)
-    except: return None
+    except ValueError: return None
 
-def check_filesize(filesize, min_size=None, max_size=None):
+def check_filesize(filesize: float, min_size: float | None = None, max_size: float | None = None) -> bool:
     if min_size and filesize < min_size: return False
     if max_size and filesize > max_size: return False
     return True
 
-def build_filesize_opts(min_size=None, max_size=None):
+def build_filesize_opts(min_size: str | None = None, max_size: str | None = None) -> dict[str, str]:
     """Build yt-dlp-compatible filesize options.
 
     yt-dlp expects string format like '100M', '1G', '500K'.

@@ -1,11 +1,13 @@
 """Metadata embedding service."""
+from typing import Any
+
 import subprocess
 from pathlib import Path
 from src.utils.logger import get_logger
 from src.utils.ffmpeg import check_ffmpeg
 logger = get_logger(__name__)
 
-def embed_metadata(filepath, title, artist="", album="", description="", thumbnail_path=None, upload_date="", comment=""):
+def embed_metadata(filepath: str | Path, title: str, artist: str = "", album: str = "", description: str = "", thumbnail_path: str | Path | None = None, upload_date: str = "", comment: str = "") -> bool:
     if not check_ffmpeg():
         logger.warning("FFmpeg not available, skipping metadata embedding")
         return False
@@ -43,5 +45,5 @@ def embed_metadata(filepath, title, artist="", album="", description="", thumbna
         if temp_path.exists(): temp_path.unlink()
         return False
 
-def extract_metadata_from_info(info):
+def extract_metadata_from_info(info: dict[str, Any]) -> dict[str, str]:
     return {"title": info.get("title", ""), "artist": info.get("uploader", info.get("artist", "")), "album": info.get("album", info.get("playlist_title", "")), "description": info.get("description", ""), "upload_date": info.get("upload_date", ""), "comment": info.get("description", "")[:500] if info.get("description") else ""}

@@ -21,7 +21,6 @@ pyinstaller --name "Kyro Downloader" \
     --icon=resources/icon.icns \
     --add-data "src:src" \
     --add-data "requirements.txt:." \
-    --hidden-import flet \
     --hidden-import textual \
     --hidden-import fastapi \
     --hidden-import uvicorn \

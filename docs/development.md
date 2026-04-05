@@ -21,8 +21,6 @@ src/
 ├── cli/            # Command-line interface
 ├── gui/            # Desktop GUI (CustomTkinter 5.2)
 │   ├── app.py      # Active 7-tab GUI runtime
-│   ├── pages/      # Legacy Flet prototypes (not active runtime)
-│   ├── widgets/    # Legacy Flet prototype widgets
 │   └── dialogs/    # Modal dialogs
 ├── ui/             # TUI (Textual) and Web (FastAPI + WebSocket)
 └── plugins/        # Plugin system

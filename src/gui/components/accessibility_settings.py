@@ -136,11 +136,14 @@ class AccessibilitySettings:
         }
         return palettes.get(mode, {})
 
-    def apply_to_flet_page(self, page):
+    def apply_to_gui_runtime(self, app):
         font_size = self.get_font_size()
         colors = self.get_contrast_colors()
         if self.is_high_contrast():
-            page.theme_mode = "dark"
+            try:
+                app.theme_mode = "dark"
+            except Exception:
+                pass
         if self.has_large_buttons():
             pass
         return {

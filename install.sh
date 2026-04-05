@@ -48,7 +48,6 @@ fi
 
 pip install -r requirements.txt -q
 pip install -r requirements-web.txt -q
-if [ "$KYRO_INSTALL_GUI" != "no" ]; then pip install flet -q; fi
 
 # Create commands
 BIN_DIR="${KYRO_BIN_DIR:-$HOME/.local/bin}"

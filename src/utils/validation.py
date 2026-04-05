@@ -17,7 +17,8 @@ def validate_platform(url):
         domain = urlparse(url).netloc.lower().replace("www.","")
         for p in SUPPORTED_PLATFORMS:
             if domain == p or domain.endswith(f".{p}"): return p
-    except: pass
+    except Exception:
+        pass
     return None
 
 def validate_output_path(path):

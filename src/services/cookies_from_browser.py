@@ -6,7 +6,7 @@ logger = get_logger(__name__)
 
 SUPPORTED_BROWSERS = ["chrome", "firefox", "edge", "brave", "opera", "safari"]
 
-def get_browser_cookies_path(browser):
+def get_browser_cookies_path(browser: str) -> str | None:
     browser = browser.lower()
     if sys.platform == "win32":
         local = os.environ.get("LOCALAPPDATA", "")
@@ -31,7 +31,7 @@ def get_browser_cookies_path(browser):
         }
         return paths.get(browser)
 
-def extract_cookies_to_netscape(browser, output_file=None):
+def extract_cookies_to_netscape(browser: str, output_file: str | None = None) -> str | None:
     cookies_path = get_browser_cookies_path(browser)
     if not cookies_path or not os.path.exists(cookies_path):
         logger.error(f"Cookies not found for {browser}")
@@ -43,5 +43,5 @@ def extract_cookies_to_netscape(browser, output_file=None):
     logger.warning(f"Use yt-dlp's --cookies-from-browser option instead: yt-dlp --cookies-from-browser {browser}")
     return output_file
 
-def get_cookies_from_browser_cmd(browser):
+def get_cookies_from_browser_cmd(browser: str) -> str:
     return f"--cookies-from-browser {browser}"

@@ -1,4 +1,5 @@
 """Browser impersonation service."""
+
 from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
@@ -9,12 +10,12 @@ BROWSER_TARGETS = {
     "edge": {"user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0"},
 }
 
-def get_impersonation_headers(browser="chrome"):
+def get_impersonation_headers(browser: str = "chrome") -> dict[str, str]:
     config = BROWSER_TARGETS.get(browser, BROWSER_TARGETS["chrome"])
     return {"User-Agent": config["user_agent"]}
 
-def build_impersonation_opts(browser=None):
-    opts = {}
+def build_impersonation_opts(browser: str | None = None) -> dict[str, str]:
+    opts: dict[str, str] = {}
     if browser:
         config = BROWSER_TARGETS.get(browser, BROWSER_TARGETS["chrome"])
         opts["user_agent"] = config["user_agent"]

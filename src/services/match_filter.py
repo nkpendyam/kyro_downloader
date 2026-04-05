@@ -1,9 +1,11 @@
 """Match filter service for advanced video filtering."""
+from typing import Any
+
 import re
 from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
-def apply_match_filters(info, filters=None):
+def apply_match_filters(info: dict[str, Any], filters: list[str] | None = None) -> bool:
     if not filters: return True
     for f in filters:
         f = f.strip()
@@ -21,22 +23,26 @@ def apply_match_filters(info, filters=None):
             field, value = f.split(">=", 1)
             try:
                 if (info.get(field.strip()) or 0) < float(value.strip()): return False
-            except: pass
+            except (TypeError, ValueError):
+                pass
         elif "<=" in f:
             field, value = f.split("<=", 1)
             try:
                 if (info.get(field.strip()) or 0) > float(value.strip()): return False
-            except: pass
+            except (TypeError, ValueError):
+                pass
         elif ">" in f:
             field, value = f.split(">", 1)
             try:
                 if (info.get(field.strip()) or 0) <= float(value.strip()): return False
-            except: pass
+            except (TypeError, ValueError):
+                pass
         elif "<" in f:
             field, value = f.split("<", 1)
             try:
                 if (info.get(field.strip()) or 0) >= float(value.strip()): return False
-            except: pass
+            except (TypeError, ValueError):
+                pass
         elif "~=" in f:
             field, pattern = f.split("~=", 1)
             try:
@@ -47,8 +53,8 @@ def apply_match_filters(info, filters=None):
                 return False
     return True
 
-def build_filter_opts(match_filters=None, break_filters=None):
-    opts = {}
+def build_filter_opts(match_filters: list[str] | None = None, break_filters: list[str] | None = None) -> dict[str, list[str]]:
+    opts: dict[str, list[str]] = {}
     if match_filters: opts["match_filter"] = match_filters
     if break_filters: opts["break_on_filter"] = break_filters
     return opts

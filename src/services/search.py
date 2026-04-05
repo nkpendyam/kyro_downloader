@@ -1,9 +1,11 @@
 """Search within platforms service."""
+from typing import Any
+
 import yt_dlp
 from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
-def search_platform(query, platform="youtube", max_results=10, sort_by="relevance"):
+def search_platform(query: str, platform: str = "youtube", max_results: int = 10, sort_by: str = "relevance") -> list[dict[str, Any]]:
     ydl_opts = {
         "quiet": True, "no_warnings": True, "skip_download": True,
         "extract_flat": True, "playlistend": max_results,
@@ -23,9 +25,9 @@ def search_platform(query, platform="youtube", max_results=10, sort_by="relevanc
         logger.error(f"Search failed: {e}")
         return []
 
-def search_all_platforms(query, max_results=5):
+def search_all_platforms(query: str, max_results: int = 5) -> dict[str, list[dict[str, Any]]]:
     platforms = ["youtube", "soundcloud"]
-    all_results = {}
+    all_results: dict[str, list[dict[str, Any]]] = {}
     for platform in platforms:
         results = search_platform(query, platform, max_results)
         if results: all_results[platform] = results

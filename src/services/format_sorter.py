@@ -1,4 +1,6 @@
 """Format selection and sorting service."""
+from typing import Any
+
 from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
@@ -15,11 +17,11 @@ SORT_KEYS = {
     "ext": lambda f: f.get("ext") or "",
 }
 
-def sort_formats(formats, sort_by="res", reverse=True):
+def sort_formats(formats: list[dict[str, Any]], sort_by: str = "res", reverse: bool = True) -> list[dict[str, Any]]:
     key_func = SORT_KEYS.get(sort_by, SORT_KEYS["res"])
     return sorted(formats, key=key_func, reverse=reverse)
 
-def filter_formats(formats, filters=None):
+def filter_formats(formats: list[dict[str, Any]], filters: list[str] | None = None) -> list[dict[str, Any]]:
     if not filters: return formats
     result = formats
     for f in filters:
@@ -40,7 +42,7 @@ def filter_formats(formats, filters=None):
             result = [fmt for fmt in result if (fmt.get("fps") or 0) >= fps]
     return result
 
-def get_best_format(formats, quality="best", hdr=False, dolby=False):
+def get_best_format(formats: list[dict[str, Any]], quality: str = "best", hdr: bool = False, dolby: bool = False) -> dict[str, Any] | None:
     video_formats = [f for f in formats if f.get("vcodec") != "none" and f.get("acodec") == "none"]
     audio_formats = [f for f in formats if f.get("acodec") != "none" and f.get("vcodec") == "none"]
     combined_formats = [f for f in formats if f.get("vcodec") != "none" and f.get("acodec") != "none"]

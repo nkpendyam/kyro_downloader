@@ -1,4 +1,5 @@
 """Link grabber - extract all video URLs from a webpage."""
+
 import re
 import requests
 from urllib.parse import urlparse
@@ -19,7 +20,7 @@ VIDEO_PATTERNS = [
     r'/video/[\d]+',
 ]
 
-def _is_safe_url(url):
+def _is_safe_url(url: str) -> bool:
     try:
         parsed = urlparse(url)
         host = parsed.hostname or ""
@@ -29,7 +30,7 @@ def _is_safe_url(url):
     except Exception:
         return False
 
-def grab_links(url, patterns=None):
+def grab_links(url: str, patterns: list[str] | None = None) -> list[str]:
     """Extract all video URLs from a webpage."""
     patterns = patterns or VIDEO_PATTERNS
     if not _is_safe_url(url):

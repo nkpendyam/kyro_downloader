@@ -23,8 +23,10 @@ class TestSendNotification:
         with patch("subprocess.run") as mock_run:
             send_notification("Test", 'Message with "quotes"')
             call_args = mock_run.call_args[0][0]
-            # The script is passed as a single argument to osascript
             assert "display notification" in call_args[2]
+            assert "item 1 of argv" in call_args[2]
+            assert call_args[3] == 'Message with "quotes"'
+            assert call_args[4] == "Test"
 
     @patch("platform.system", return_value="Windows")
     def test_fallback_on_failure(self, mock_system):

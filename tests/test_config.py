@@ -82,6 +82,10 @@ class TestConfigSchema:
         assert "download" in dump
         assert "ui" in dump
 
+    def test_web_cors_default_matches_defaults(self):
+        config = AppConfig()
+        assert config.web.cors_origins == DEFAULT_CONFIG["web"]["cors_origins"]
+
 
 class TestConfigDefaults:
     def test_default_config_has_required_keys(self):

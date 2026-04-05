@@ -48,7 +48,8 @@ class FileBrowser:
         try:
             Path(filepath).unlink()
             return True
-        except: return False
+        except OSError:
+            return False
 
     def open_file(self, filepath):
         import subprocess

@@ -1,12 +1,13 @@
 """Thumbnail download and embedding service."""
-import requests
 from pathlib import Path
+
+import requests
 from PIL import Image
 from io import BytesIO
 from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
-def download_thumbnail(url, output_path, filename="thumbnail"):
+def download_thumbnail(url: str, output_path: str | Path, filename: str = "thumbnail") -> Path | None:
     output_dir = Path(output_path)
     output_dir.mkdir(parents=True, exist_ok=True)
     filepath = output_dir / f"{filename}.jpg"
@@ -21,7 +22,7 @@ def download_thumbnail(url, output_path, filename="thumbnail"):
         logger.warning(f"Thumbnail download failed: {e}")
         return None
 
-def show_thumbnail_inline(url, max_width=60):
+def show_thumbnail_inline(url: str, max_width: int = 60) -> None:
     try:
         response = requests.get(url, timeout=10)
         response.raise_for_status()
@@ -30,7 +31,7 @@ def show_thumbnail_inline(url, max_width=60):
     except Exception as e:
         logger.warning(f"Thumbnail display failed: {e}")
 
-def embed_thumbnail_in_video(video_path, thumbnail_path):
+def embed_thumbnail_in_video(video_path: str | Path, thumbnail_path: str | Path) -> bool:
     import subprocess
     if not Path(thumbnail_path).exists(): return False
     temp_path = Path(video_path).with_suffix(".temp.mp4")
@@ -44,6 +45,6 @@ def embed_thumbnail_in_video(video_path, thumbnail_path):
         else:
             if temp_path.exists(): temp_path.unlink()
             return False
-    except:
+    except Exception:
         if temp_path.exists(): temp_path.unlink()
         return False

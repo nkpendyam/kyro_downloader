@@ -5,10 +5,10 @@ import yt_dlp
 from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
-def check_aria2c():
+def check_aria2c() -> bool:
     return shutil.which("aria2c") is not None
 
-def download_with_aria2c(url, output_path, max_connections=16, rate_limit=None):
+def download_with_aria2c(url: str, output_path: str, max_connections: int = 16, rate_limit: str | None = None) -> bool | None:
     if not check_aria2c():
         logger.error("aria2c not found")
         return None
@@ -36,6 +36,6 @@ def download_with_aria2c(url, output_path, max_connections=16, rate_limit=None):
         logger.error(f"aria2c download error: {e}")
         return False
 
-def get_external_downloader():
+def get_external_downloader() -> str | None:
     if check_aria2c(): return "aria2c"
     return None

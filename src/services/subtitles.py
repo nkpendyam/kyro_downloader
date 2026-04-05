@@ -1,16 +1,18 @@
 """Subtitle download and embedding service."""
+from typing import Any
+
 from pathlib import Path
 from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
-def build_subtitle_opts(languages=None, embed=False, auto_generated=True, subtitle_format="srt"):
+def build_subtitle_opts(languages: list[str] | None = None, embed: bool = False, auto_generated: bool = True, subtitle_format: str = "srt") -> dict[str, Any]:
     opts = {"writesubtitles": True, "writeautomaticsub": auto_generated, "subtitleslangs": languages or ["en"], "subtitlesformat": subtitle_format}
     if embed:
         opts["postprocessors"] = opts.get("postprocessors", [])
         opts["postprocessors"].append({"key": "FFmpegEmbedSubtitle"})
     return opts
 
-def get_available_subtitles(info):
+def get_available_subtitles(info: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not info:
         return []
     subtitles = []
@@ -20,7 +22,7 @@ def get_available_subtitles(info):
         subtitles.append({"language": lang, "auto_generated": True, "ext": sub_list[0].get("ext", "unknown") if sub_list else "unknown"})
     return subtitles
 
-def download_subtitles_separately(info, output_path, languages=None, subtitle_format="srt"):
+def download_subtitles_separately(info: dict[str, Any], output_path: str | Path, languages: list[str] | None = None, subtitle_format: str = "srt") -> list[Path]:
     from yt_dlp import YoutubeDL
     languages = languages or ["en"]
     output_dir = Path(output_path)

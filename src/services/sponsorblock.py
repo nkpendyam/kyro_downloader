@@ -1,11 +1,13 @@
 """SponsorBlock integration."""
+from typing import Any
+
 import requests
 from src.utils.logger import get_logger
 logger = get_logger(__name__)
 SPONSORBLOCK_API = "https://sponsor.ajay.app/api"
 CATEGORY_NAMES = {"sponsor": "Sponsor", "intro": "Intermission/Intro", "outro": "Endcards/Credits", "selfpromo": "Self Promotion", "preview": "Preview/Recap", "filler": "Filler Tangent", "interaction": "Interaction Reminder", "music_offtopic": "Music Off Topic"}
 
-def get_segments(video_id, categories=None):
+def get_segments(video_id: str, categories: list[str] | None = None) -> list[dict[str, Any]]:
     categories = categories or ["sponsor", "intro", "outro", "selfpromo"]
     try:
         params = [("videoID", video_id)]
@@ -24,7 +26,7 @@ def get_segments(video_id, categories=None):
         logger.warning(f"SponsorBlock API error: {e}")
         return []
 
-def extract_video_id(url):
+def extract_video_id(url: str) -> str | None:
     import re
     patterns = [r"(?:v=|/v/|youtu\.be/|embed/|shorts/)([a-zA-Z0-9_-]{11})", r"(?:\?v=|&v=)([a-zA-Z0-9_-]{11})"]
     for pattern in patterns:
@@ -32,7 +34,7 @@ def extract_video_id(url):
         if match: return match.group(1)
     return None
 
-def format_segments_for_display(segments):
+def format_segments_for_display(segments: list[dict[str, Any]]) -> str:
     if not segments: return "No sponsor segments found"
     lines = ["\n[bold yellow]SponsorBlock Segments:[/bold yellow]"]
     for seg in segments:
@@ -43,6 +45,6 @@ def format_segments_for_display(segments):
         lines.append(f"  {seg['category_name']}: {start_min}:{start_sec:02d} - {end_min}:{end_sec:02d}")
     return "\n".join(lines)
 
-def build_sponsorblock_opts(categories=None):
+def build_sponsorblock_opts(categories: list[str] | None = None) -> dict[str, str]:
     cats = categories or ["sponsor"]
     return {"sponsorblock_mark": ",".join(cats), "sponsorblock_remove": ",".join(cats)}

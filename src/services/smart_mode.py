@@ -1,8 +1,10 @@
 """Smart mode - auto-detect best quality based on file size and speed."""
+from typing import Any
+
 from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
-def get_smart_quality(info, max_size_mb=None, min_speed_mbps=None):
+def get_smart_quality(info: Any, max_size_mb: float | None = None, min_speed_mbps: float | None = None) -> dict[str, Any]:
     """Determine optimal quality based on video info and constraints.
 
     Args:
