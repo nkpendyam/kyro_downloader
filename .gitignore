@@ -20,10 +20,13 @@ cookies.txt
 config/config.yaml
 .pytest_cache/
 .coverage
+coverage.xml
 htmlcov/
 .mypy_cache/
 .hypothesis/
 .kyro_state/
+kyro_settings_*.json
+.claude/
 test_output/
 nul
 *.spec.bak
