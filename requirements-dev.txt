@@ -1,0 +1,7 @@
+pytest
+pytest-cov
+pytest-asyncio
+pytest-mock
+ruff
+mypy
+httpx

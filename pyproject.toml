@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kyro-downloader"
+version = "2.0.0"
+description = "Production-grade media downloader by nkpendyam"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "nkpendyam"}]
+requires-python = ">=3.10"
+dependencies = [
+    "yt-dlp", "rich", "pyfiglet", "pyperclip", "requests",
+    "pillow", "loguru", "pyyaml", "pydantic", "textual", "plyer", "packaging",
+    "customtkinter",
+]
+
+[project.optional-dependencies]
+web = ["fastapi", "uvicorn", "jinja2", "python-multipart"]
+cloud = ["boto3", "google-api-python-client", "google-auth-oauthlib"]
+dev = ["pytest", "pytest-cov", "pytest-asyncio", "pytest-mock", "ruff", "mypy", "httpx"]
+
+[project.scripts]
+kyro = "src.cli.__main__:main"
+kyro-tui = "src.ui.tui:run_tui"
+kyro-web = "src.ui.web.server:run_web"
+kyro-gui = "src.gui.gui_main:main"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 320
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E701",  # Multiple statements on one line (colon) - intentional compact style
+    "E722",  # Bare except - intentional in cleanup code
+    "E501",  # Line too long - config lines exceed limit
+    "E402",  # Module level import not at top of file - intentional for GUI try/except
+]

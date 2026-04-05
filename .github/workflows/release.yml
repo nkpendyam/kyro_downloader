@@ -1,0 +1,396 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build EXE with PyInstaller (spec file)
+        run: |
+          pyinstaller --clean kyro.spec
+
+      - name: Rename EXE
+        run: |
+          Rename-Item "dist\KyroDownloader.exe" "kyro-downloader-${{ needs.version.outputs.version }}-windows-x64.exe"
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kyro-downloader-${{ needs.version.outputs.version }}-windows-x64.exe
+          path: dist/kyro-downloader-${{ needs.version.outputs.version }}-windows-x64.exe
+
+  linux:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Install AppImage tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2 desktop-file-utils
+
+      - name: Build AppDir with PyInstaller
+        run: |
+          pyinstaller --name "KyroDownloader" \
+            --onedir \
+            --add-data "config:config" \
+            --hidden-import=src \
+            --hidden-import=src.core \
+            --hidden-import=src.core.downloader \
+            --hidden-import=src.core.download_manager \
+            --hidden-import=src.core.queue \
+            --hidden-import=src.core.progress \
+            --hidden-import=src.core.retry \
+            --hidden-import=src.core.concurrent \
+            --hidden-import=src.services \
+            --hidden-import=src.services.archive \
+            --hidden-import=src.services.statistics \
+            --hidden-import=src.services.converter \
+            --hidden-import=src.services.compressor \
+            --hidden-import=src.services.subtitles \
+            --hidden-import=src.services.sponsorblock \
+            --hidden-import=src.services.search \
+            --hidden-import=src.services.livestream \
+            --hidden-import=src.services.channels \
+            --hidden-import=src.services.chapters \
+            --hidden-import=src.services.external_dl \
+            --hidden-import=src.services.media_server \
+            --hidden-import=src.services.link_grabber \
+            --hidden-import=src.services.reports \
+            --hidden-import=src.services.subscriptions \
+            --hidden-import=src.services.subtitle_translate \
+            --hidden-import=src.services.proxy_manager \
+            --hidden-import=src.services.categories \
+            --hidden-import=src.utils \
+            --hidden-import=src.utils.ytdlp_updater \
+            --hidden-import=src.utils.app_updater \
+            --hidden-import=src.utils.validation \
+            --hidden-import=src.utils.platform \
+            --hidden-import=src.utils.ffmpeg \
+            --hidden-import=src.utils.logger \
+            --hidden-import=src.utils.dedup \
+            --hidden-import=src.utils.notifications \
+            --hidden-import=src.config \
+            --hidden-import=src.config.manager \
+            --hidden-import=src.config.schema \
+            --hidden-import=src.config.defaults \
+            --hidden-import=src.gui \
+            --hidden-import=src.gui.app \
+            --hidden-import=src.gui.gui_main \
+            --hidden-import=src.cli \
+            --hidden-import=src.cli.__main__ \
+            --hidden-import=src.cli.commands \
+            --hidden-import=src.cli.commands.archive \
+            --hidden-import=src.cli.commands.channels \
+            --hidden-import=src.cli.commands.chapters \
+            --hidden-import=src.cli.commands.compress \
+            --hidden-import=src.cli.commands.convert \
+            --hidden-import=src.cli.commands.external \
+            --hidden-import=src.cli.commands.livestream \
+            --hidden-import=src.cli.commands.schedule \
+            --hidden-import=src.cli.commands.search \
+            --hidden-import=src.cli.commands.stats \
+            --hidden-import=src.ui \
+            --hidden-import=src.ui.banner \
+            --hidden-import=src.ui.tui \
+            --hidden-import=src.ui.web \
+            --hidden-import=src.ui.web.server \
+            --hidden-import=src.ui.web.routes \
+            --hidden-import=src.ui.web.websocket \
+            --hidden-import=src.plugins \
+            --hidden-import=src.plugins.loader \
+            --hidden-import=src.plugins.api \
+            --hidden-import=src.plugins.builtin \
+            --hidden-import=src.plugins.builtin.auto_compress \
+            --hidden-import=src.plugins.builtin.auto_convert \
+            --hidden-import=src.plugins.builtin.auto_organize \
+            --hidden-import=src.plugins.builtin.subtitle_auto \
+            --collect-all customtkinter \
+            --collect-all darkdetect \
+            src/gui/gui_main.py
+
+      - name: Create AppImage
+        run: |
+          mkdir -p AppDir/usr/{bin,share/applications,share/icons/hicolor/256x256/apps}
+          cp -r dist/KyroDownloader/* AppDir/usr/bin/
+          cp src/gui/assets/icon_256.png AppDir/kyro-downloader.png
+          cp src/gui/assets/icon_256.png AppDir/usr/share/icons/hicolor/256x256/apps/kyro-downloader.png
+          cat > AppDir/kyro-downloader.desktop << 'EOF'
+          [Desktop Entry]
+          Name=Kyro Downloader
+          Exec=KyroDownloader
+          Icon=kyro-downloader
+          Type=Application
+          Categories=Network;
+          EOF
+          cp AppDir/kyro-downloader.desktop AppDir/usr/share/applications/
+          cat > AppDir/AppRun << 'EOF'
+          #!/bin/bash
+          HERE="$(dirname "$(readlink -f "${0}")")"
+          exec "$HERE/usr/bin/KyroDownloader" "$@"
+          EOF
+          chmod +x AppDir/AppRun
+          wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" -O appimagetool
+          chmod +x appimagetool
+          ./appimagetool AppDir "kyro-downloader-${{ needs.version.outputs.version }}-linux-x86_64.AppImage"
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kyro-downloader-${{ needs.version.outputs.version }}-linux-x86_64.AppImage
+          path: kyro-downloader-${{ needs.version.outputs.version }}-linux-x86_64.AppImage
+
+  macos:
+    needs: version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build App Bundle with PyInstaller
+        run: |
+          pyinstaller --name "KyroDownloader" \
+            --windowed \
+            --onedir \
+            --add-data "config:config" \
+            --hidden-import=src \
+            --hidden-import=src.core \
+            --hidden-import=src.core.downloader \
+            --hidden-import=src.core.download_manager \
+            --hidden-import=src.core.queue \
+            --hidden-import=src.core.progress \
+            --hidden-import=src.core.retry \
+            --hidden-import=src.core.concurrent \
+            --hidden-import=src.services \
+            --hidden-import=src.services.archive \
+            --hidden-import=src.services.statistics \
+            --hidden-import=src.services.converter \
+            --hidden-import=src.services.compressor \
+            --hidden-import=src.services.subtitles \
+            --hidden-import=src.services.sponsorblock \
+            --hidden-import=src.services.search \
+            --hidden-import=src.services.livestream \
+            --hidden-import=src.services.channels \
+            --hidden-import=src.services.chapters \
+            --hidden-import=src.services.external_dl \
+            --hidden-import=src.services.media_server \
+            --hidden-import=src.services.link_grabber \
+            --hidden-import=src.services.reports \
+            --hidden-import=src.services.subscriptions \
+            --hidden-import=src.services.subtitle_translate \
+            --hidden-import=src.services.proxy_manager \
+            --hidden-import=src.services.categories \
+            --hidden-import=src.utils \
+            --hidden-import=src.utils.ytdlp_updater \
+            --hidden-import=src.utils.app_updater \
+            --hidden-import=src.utils.validation \
+            --hidden-import=src.utils.platform \
+            --hidden-import=src.utils.ffmpeg \
+            --hidden-import=src.utils.logger \
+            --hidden-import=src.utils.dedup \
+            --hidden-import=src.utils.notifications \
+            --hidden-import=src.config \
+            --hidden-import=src.config.manager \
+            --hidden-import=src.config.schema \
+            --hidden-import=src.config.defaults \
+            --hidden-import=src.gui \
+            --hidden-import=src.gui.app \
+            --hidden-import=src.gui.gui_main \
+            --hidden-import=src.cli \
+            --hidden-import=src.cli.__main__ \
+            --hidden-import=src.cli.commands \
+            --hidden-import=src.cli.commands.archive \
+            --hidden-import=src.cli.commands.channels \
+            --hidden-import=src.cli.commands.chapters \
+            --hidden-import=src.cli.commands.compress \
+            --hidden-import=src.cli.commands.convert \
+            --hidden-import=src.cli.commands.external \
+            --hidden-import=src.cli.commands.livestream \
+            --hidden-import=src.cli.commands.schedule \
+            --hidden-import=src.cli.commands.search \
+            --hidden-import=src.cli.commands.stats \
+            --hidden-import=src.ui \
+            --hidden-import=src.ui.banner \
+            --hidden-import=src.ui.tui \
+            --hidden-import=src.ui.web \
+            --hidden-import=src.ui.web.server \
+            --hidden-import=src.ui.web.routes \
+            --hidden-import=src.ui.web.websocket \
+            --hidden-import=src.plugins \
+            --hidden-import=src.plugins.loader \
+            --hidden-import=src.plugins.api \
+            --hidden-import=src.plugins.builtin \
+            --hidden-import=src.plugins.builtin.auto_compress \
+            --hidden-import=src.plugins.builtin.auto_convert \
+            --hidden-import=src.plugins.builtin.auto_organize \
+            --hidden-import=src.plugins.builtin.subtitle_auto \
+            --collect-all customtkinter \
+            --collect-all darkdetect \
+            src/gui/gui_main.py
+
+      - name: Create DMG
+        run: |
+          hdiutil create -volname "Kyro Downloader" \
+            -srcfolder "dist/KyroDownloader" \
+            -ov -format UDZO \
+            "kyro-downloader-${{ needs.version.outputs.version }}-macos-universal.dmg"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kyro-downloader-${{ needs.version.outputs.version }}-macos-universal.dmg
+          path: kyro-downloader-${{ needs.version.outputs.version }}-macos-universal.dmg
+
+  docker:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: |
+          docker build -f docker/Dockerfile -t kyro-downloader:${{ needs.version.outputs.version }} .
+          docker save kyro-downloader:${{ needs.version.outputs.version }} | gzip > kyro-downloader-${{ needs.version.outputs.version }}-docker.tar.gz
+
+      - name: Upload Docker artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kyro-downloader-${{ needs.version.outputs.version }}-docker.tar.gz
+          path: kyro-downloader-${{ needs.version.outputs.version }}-docker.tar.gz
+
+  python-package:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+
+      - name: Build wheel and sdist
+        run: |
+          python -m build
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kyro-downloader-${{ needs.version.outputs.version }}-py3-none-any.whl
+          path: dist/*.whl
+
+      - name: Upload sdist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kyro-downloader-${{ needs.version.outputs.version }}.tar.gz
+          path: dist/*.tar.gz
+
+  create-release:
+    needs: [version, windows, linux, macos, docker, python-package]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Flatten artifact directories
+        run: |
+          mkdir -p release-flat
+          find release-assets -type f -exec mv {} release-flat/ \;
+          ls -la release-flat/
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREVIOUS_TAG" ]; then
+            echo "notes<<EOF" >> $GITHUB_OUTPUT
+            echo "## Changes since $PREVIOUS_TAG" >> $GITHUB_OUTPUT
+            git log --pretty=format:"- %s" "$PREVIOUS_TAG"..HEAD >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "notes=Initial release of Kyro Downloader v${{ needs.version.outputs.version }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.version.outputs.version }}
+          name: Kyro Downloader v${{ needs.version.outputs.version }}
+          body: ${{ steps.notes.outputs.notes }}
+          draft: false
+          prerelease: false
+          files: |
+            release-flat/*.exe
+            release-flat/*.AppImage
+            release-flat/*.dmg
+            release-flat/*.tar.gz
+            release-flat/*.whl
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

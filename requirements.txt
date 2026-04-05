@@ -1,0 +1,17 @@
+yt-dlp
+rich
+pyfiglet
+pyperclip
+requests
+pillow
+loguru
+pyyaml
+pydantic
+textual
+plyer
+packaging
+customtkinter
+fastapi
+uvicorn
+jinja2
+python-multipart

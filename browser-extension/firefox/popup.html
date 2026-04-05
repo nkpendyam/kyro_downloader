@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { width: 320px; padding: 16px; font-family: system-ui, sans-serif; }
+    h2 { margin: 0 0 12px; font-size: 16px; color: #1a73e8; }
+    .url-display { word-break: break-all; font-size: 12px; color: #555; margin-bottom: 12px; padding: 8px; background: #f5f5f5; border-radius: 4px; }
+    .btn-group { display: flex; flex-direction: column; gap: 8px; }
+    button { padding: 10px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; }
+    .btn-primary { background: #1a73e8; color: white; }
+    .btn-primary:hover { background: #1557b0; }
+    .btn-secondary { background: #f1f3f4; color: #333; }
+    .btn-secondary:hover { background: #e8eaed; }
+    .status { margin-top: 12px; font-size: 12px; color: #666; }
+    .status.success { color: #0d652d; }
+    .status.error { color: #c5221f; }
+  </style>
+</head>
+<body>
+  <h2>Kyro Downloader</h2>
+  <div class="url-display" id="url-display">Detecting URL...</div>
+  <div class="btn-group">
+    <button class="btn-primary" id="btn-download">Download</button>
+    <button class="btn-secondary" id="btn-mp3">Download as MP3</button>
+    <button class="btn-secondary" id="btn-queue">Add to Queue</button>
+  </div>
+  <div class="status" id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+version: "3.8"
+services:
+  kyro:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: kyro-downloader
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../downloads:/app/downloads
+      - ../config:/app/config
+      - ../logs:/app/logs
+    environment:
+      - KYRO_WEB_HOST=0.0.0.0
+      - KYRO_WEB_PORT=8000
+      - KYRO_GENERAL__LOG_LEVEL=INFO
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

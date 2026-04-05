@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kyro Downloader</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Kyro Downloader</h1>
+            <p class="subtitle">Production-grade media downloader by nkpendyam</p>
+        </header>
+        <div class="card">
+            <h2>Download</h2>
+            <div class="form-group">
+                <label for="url">URL</label>
+                <input type="text" id="url" placeholder="https://youtube.com/watch?v=...">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="mode">Mode</label>
+                    <select id="mode">
+                        <option value="video">Video</option>
+                        <option value="audio">Audio Only</option>
+                        <option value="playlist">Playlist</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="audio-format">Audio Format</label>
+                    <select id="audio-format">
+                        <option value="mp3">MP3</option>
+                        <option value="flac">FLAC</option>
+                        <option value="aac">AAC</option>
+                        <option value="ogg">OGG</option>
+                        <option value="wav">WAV</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="priority">Priority</label>
+                    <select id="priority">
+                        <option value="normal">Normal</option>
+                        <option value="high">High</option>
+                        <option value="low">Low</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="output">Output Path</label>
+                <input type="text" id="output" placeholder="./downloads">
+            </div>
+            <div class="checkbox-group">
+                <label><input type="checkbox" id="subtitles"> Download Subtitles</label>
+                <label><input type="checkbox" id="sponsorblock"> SponsorBlock</label>
+            </div>
+            <div class="btn-group">
+                <button id="btn-info" class="btn btn-secondary">Get Info</button>
+                <button id="btn-download" class="btn btn-primary">Download</button>
+            </div>
+        </div>
+        <div class="card" id="info-card" style="display:none;">
+            <h2>Video Info</h2>
+            <div id="video-info"></div>
+            <div id="formats-list"></div>
+        </div>
+        <div class="card">
+            <h2>Queue</h2>
+            <div id="queue-list"><p class="empty-state">No downloads in queue</p></div>
+            <button id="btn-refresh" class="btn btn-secondary">Refresh Queue</button>
+        </div>
+        <div class="card">
+            <h2>Progress</h2>
+            <div id="progress-container">
+                <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+                <p id="progress-text">Waiting...</p>
+            </div>
+        </div>
+        <div class="card">
+            <h2>Supported Platforms</h2>
+            <div id="platforms-list">Loading...</div>
+        </div>
+    </div>
+    <script src="/static/app.js"></script>
+</body>
+</html>

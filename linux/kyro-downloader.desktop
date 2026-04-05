@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Kyro Downloader
+Comment=Production-grade media downloader by nkpendyam
+Exec=kyro-downloader
+Icon=kyro-downloader
+Terminal=false
+Type=Application
+Categories=Network;FileTransfer;
+Keywords=download;video;audio;youtube;instagram;tiktok;
+StartupWMClass=kyro-downloader

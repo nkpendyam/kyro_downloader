@@ -1,0 +1,18 @@
+[Unit]
+Description=Kyro Downloader Web Service
+After=network.target
+
+[Service]
+Type=simple
+User=kyro
+WorkingDirectory=/opt/kyro-downloader
+ExecStart=/opt/kyro-downloader/venv/bin/python -m src.ui.web.server
+Restart=on-failure
+RestartSec=5
+Environment=PATH=/opt/kyro-downloader/venv/bin
+Environment=KYRO_WEB__HOST=0.0.0.0
+Environment=KYRO_WEB__PORT=8000
+Environment=KYRO_GENERAL__LOG_LEVEL=INFO
+
+[Install]
+WantedBy=multi-user.target

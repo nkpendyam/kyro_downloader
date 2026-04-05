@@ -1,0 +1,63 @@
+general:
+  output_path: "./downloads"
+  log_level: "INFO"
+  log_file: "./logs/kyro.log"
+  notifications: true
+  auto_update: true
+  check_duplicates: true
+
+download:
+  max_retries: 3
+  retry_delay: 2.0
+  retry_backoff: "exponential"
+  concurrent_workers: 3
+  rate_limit: null
+  proxy: null
+  cookies_file: null
+  timeout: 300
+  fragment_retries: 10
+  concurrent_fragment_downloads: 4
+
+video:
+  default_quality: "best"
+  prefer_format: "mp4"
+  embed_thumbnail: true
+  embed_metadata: true
+
+audio:
+  format: "mp3"
+  quality: "192"
+  embed_thumbnail: true
+  embed_metadata: true
+
+playlist:
+  concurrent_downloads: 3
+  sleep_interval: 0
+  max_downloads: null
+
+subtitles:
+  enabled: false
+  languages: ["en"]
+  embed: false
+  auto_generated: true
+  format: "srt"
+
+sponsorblock:
+  enabled: false
+  categories: ["sponsor", "intro", "outro", "selfpromo"]
+
+cloud:
+  enabled: false
+  provider: null
+  bucket: null
+
+ui:
+  theme: "dark"
+  show_banner: true
+  show_thumbnail: true
+
+web:
+  host: "127.0.0.1"
+  port: 8000
+  debug: false
+  cors_origins: ["*"]

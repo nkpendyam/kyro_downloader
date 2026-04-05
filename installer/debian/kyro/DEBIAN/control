@@ -1,0 +1,12 @@
+Package: kyro-downloader
+Version: 1.0.0
+Section: net
+Priority: optional
+Architecture: amd64
+Depends: python3 (>= 3.9), python3-pip, ffmpeg
+Maintainer: nkpendyam <nkpendyam@users.noreply.github.com>
+Description: Production-grade media downloader with 4 UI modes
+ Kyro Downloader is a cross-platform media downloader supporting 20+ platforms
+ with CLI, TUI, Web UI, and Desktop GUI. Features include 8K/4K HDR video,
+ Dolby Atmos audio, parallel downloads, queue management, and more.
+Homepage: https://github.com/nkpendyam/kyro_downloader
