@@ -3,9 +3,30 @@
 import asyncio
 import json
 import threading
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from src.utils.logger import get_logger
 from src.config.manager import load_config
+
+try:
+    from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+    _FASTAPI_AVAILABLE = True
+except ImportError:
+    _FASTAPI_AVAILABLE = False
+
+    class WebSocketDisconnect(Exception):
+        """Fallback disconnect error when FastAPI is unavailable."""
+
+    class WebSocket:  # pragma: no cover - typing fallback only
+        """Fallback websocket type when FastAPI is unavailable."""
+
+    class _DummyRouter:
+        def websocket(self, *_args, **_kwargs):
+            def _decorator(func):
+                return func
+
+            return _decorator
+
+    APIRouter = _DummyRouter  # type: ignore[assignment]
 
 logger = get_logger(__name__)
 
