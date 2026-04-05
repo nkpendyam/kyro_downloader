@@ -15,13 +15,13 @@ pip install customtkinter  # for GUI development
 ```
 src/
 ├── core/           # Download engine (downloader, queue, progress, retry)
-├── services/       # Feature modules (36 services)
+├── services/       # Feature modules
 ├── utils/          # Shared utilities (validation, logging, etc.)
 ├── config/         # Configuration (Pydantic models, YAML)
 ├── cli/            # Command-line interface
 ├── gui/            # Desktop GUI (CustomTkinter 5.2)
 │   ├── app.py      # Active 7-tab GUI runtime
-│   └── dialogs/    # Modal dialogs
+│   └── components/ # Reusable GUI components
 ├── ui/             # TUI (Textual) and Web (FastAPI + WebSocket)
 └── plugins/        # Plugin system
 ```

@@ -45,7 +45,7 @@ Supports: Videos, Audio, Stories, Posts, Reels/Shorts, Live Streams, HDR, Dolby 
 - Download statistics and analytics dashboard
 
 ### Interfaces
-- **CLI** - 20+ commands with rich formatting, interactive mode, plugin management
+- **CLI** - Download, playlist, batch, info, plugins, and utility commands with rich formatting
 - **GUI** - Modern desktop app with CustomTkinter (7 tabs: Download, Queue, History, Search, Stats, Schedule, Settings)
 - **TUI** - Interactive terminal UI with Textual (`kyro tui`)
 - **Web UI** - FastAPI with REST API + WebSocket progress (`kyro web`)
@@ -272,10 +272,10 @@ pyinstaller kyro.spec
 ```
 src/
 ├── core/           # Download engine (downloader, queue, progress, retry, concurrent)
-├── services/       # 36 feature modules (SponsorBlock, subtitles, search, plugins, etc.)
+├── services/       # Feature modules (SponsorBlock, subtitles, search, presets, scheduling, etc.)
 ├── utils/          # Shared utilities (validation, logging, notifications, etc.)
 ├── config/         # Pydantic config models + YAML management
-├── cli/            # 20+ CLI commands with rich formatting, interactive mode
+├── cli/            # CLI parser, command handlers, and interactive mode
 ├── gui/            # CustomTkinter desktop app (7 tabs, smart quality selector)
 ├── ui/             # TUI (Textual) and Web (FastAPI + WebSocket)
 └── plugins/        # Plugin system (loader, API, 5 builtin plugins)

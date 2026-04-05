@@ -3,7 +3,7 @@
 ## Project summary
 Kyro is a production-grade Python media downloader wrapping yt-dlp.
 It exposes four interfaces: CLI (rich/pyfiglet), GUI (CustomTkinter), TUI (Textual), Web (FastAPI + WebSocket).
-It supports 1000+ platforms, 8K/HDR/Dolby Atmos, 298 automated tests, a plugin system, and cross-platform packaging.
+It supports 1000+ platforms, 8K/HDR/Dolby Atmos, 310 automated tests, a plugin system, and cross-platform packaging.
 
 ## Python version
 3.10+ required. Use 3.11–3.12 for PyInstaller builds. Never use 3.14+.
@@ -21,11 +21,11 @@ It supports 1000+ platforms, 8K/HDR/Dolby Atmos, 298 automated tests, a plugin s
 ## Architecture — always follow this
 src/
   core/       → Download engine only (downloader.py, queue.py, progress.py, retry.py, concurrent.py, download_manager.py)
-  services/   → Feature modules — one responsibility per file (36 services)
+  services/   → Feature modules — one responsibility per file
   config/     → Pydantic models + YAML (schema.py, manager.py, defaults.py)
-  cli/commands/ → One file per CLI command (20+ commands)
+  cli/commands/ → CLI subcommand modules and handlers
   gui/components/ → One component per file (CustomTkinter widgets)
-  gui/pages/  → One page per file (7 tabs)
+  gui/        → CustomTkinter desktop app and components
   ui/web/     → FastAPI routes, WebSocket, static, templates
   plugins/    → Plugin loader + API + builtin plugins
   utils/      → Shared helpers (logger, validation, ffmpeg, platform, etc.)
