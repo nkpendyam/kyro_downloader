@@ -1,45 +1,78 @@
 """Input validation utilities."""
-import re
+
 import os
+import ipaddress
 from pathlib import Path
 from urllib.parse import urlparse
 
-SUPPORTED_PLATFORMS = ["youtube.com","youtu.be","vimeo.com","dailymotion.com","twitter.com","x.com","twitch.tv","reddit.com","tiktok.com","instagram.com","facebook.com","soundcloud.com","bandcamp.com","peertube.tv","threads.net","pinterest.com","snapchat.com","linkedin.com","tumblr.com","bilibili.com"]
 
-def validate_url(url):
+def _supported_platforms() -> list[str]:
+    from src.utils.platform import PLATFORM_CONFIG
+
+    return list(PLATFORM_CONFIG.keys())
+
+
+def validate_url(url: str | None) -> bool:
     if not url or not isinstance(url, str):
         return False
-    return bool(re.match(r"^https?://(?:(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}|(?:\d{1,3}\.){3}\d{1,3})(?::\d+)?(?:/[^\s]*)?$", url))
-
-def validate_platform(url):
-    if not validate_url(url): return None
+    parsed = urlparse(url.strip())
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    host = parsed.hostname
+    if not host:
+        return False
+    if host == "localhost":
+        return True
     try:
-        domain = urlparse(url).netloc.lower().replace("www.","")
-        for p in SUPPORTED_PLATFORMS:
-            if domain == p or domain.endswith(f".{p}"): return p
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        pass
+    if "." not in host:
+        return False
+    return True
+
+
+def validate_platform(url: str | None) -> str | None:
+    if not validate_url(url):
+        return None
+    try:
+        domain = urlparse(url).netloc.lower().replace("www.", "")
+        for p in _supported_platforms():
+            if domain == p or domain.endswith(f".{p}"):
+                return p
     except Exception:
         pass
     return None
 
-def validate_output_path(path):
-    if not path or not path.strip(): path = os.path.join(os.getcwd(), "downloads")
+
+def validate_output_path(path: str | None) -> Path:
+    if not path or not path.strip():
+        path = os.path.join(os.getcwd(), "downloads")
     output_path = Path(path).resolve()
     output_path.mkdir(parents=True, exist_ok=True)
     return output_path
 
-def validate_integer(value, min_val=None, max_val=None):
+
+def validate_integer(value: str | None, min_val: int | None = None, max_val: int | None = None) -> int | None:
     try:
         num = int(value)
-        if min_val is not None and num < min_val: return None
-        if max_val is not None and num > max_val: return None
+        if min_val is not None and num < min_val:
+            return None
+        if max_val is not None and num > max_val:
+            return None
         return num
-    except (ValueError, TypeError): return None
+    except (ValueError, TypeError):
+        return None
 
-def sanitize_filename(filename):
-    sanitized = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", filename).strip()
+
+def sanitize_filename(filename: str) -> str:
+    invalid = '<>:"/\\|?*'
+    sanitized = "".join("_" if ch in invalid or ord(ch) < 32 else ch for ch in filename).strip()
     return sanitized[:200] if sanitized else "untitled"
 
-def validate_batch_file(filepath):
+
+def validate_batch_file(filepath: str) -> list[str]:
     path = Path(filepath)
     if not path.exists():
         raise FileNotFoundError(f"Batch file not found: {filepath}")

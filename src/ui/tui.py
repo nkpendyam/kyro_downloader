@@ -1,4 +1,5 @@
 """Textual TUI application."""
+
 import os
 import argparse
 import threading
@@ -9,13 +10,14 @@ from textual.binding import Binding
 
 from src import __version__
 from src.config.manager import load_config
-from src.core.download_manager import DownloadManager
+from src.core.download_manager import DownloadManager, DownloadOptions
 from src.core.downloader import get_video_info
 from src.services.presets import PresetsManager
 from src.utils.validation import validate_url, validate_output_path
 from src.utils.platform import normalize_url
 from src.ui.themes import get_theme
 from src.utils.ytdlp_updater import auto_update_on_startup
+
 
 class KyroApp(App):
     CSS = """
@@ -40,6 +42,7 @@ class KyroApp(App):
         Binding("r", "resume_queue", "Resume", show=True),
         Binding("c", "clear_queue", "Clear", show=True),
     ]
+
     def __init__(self):
         super().__init__()
         self.config = load_config()
@@ -53,11 +56,31 @@ class KyroApp(App):
         yield Container(
             Static(f"[bold cyan]Kyro Downloader v{__version__}[/bold cyan]", id="header-panel"),
             Input(placeholder="Enter URL...", id="url-input"),
-            Select([("Video", "video"), ("MP3", "mp3"), ("Playlist", "playlist"), ("Batch", "batch")], value="video", id="mode-select", prompt="Select mode"),
-            Select([("None", "None")] + [(name, name) for name in self.presets_manager.get_all_presets().keys()], value="None", id="preset-select", prompt="Select preset"),
+            Select(
+                [("Video", "video"), ("MP3", "mp3"), ("Playlist", "playlist"), ("Batch", "batch")],
+                value="video",
+                id="mode-select",
+                prompt="Select mode",
+            ),
+            Select(
+                [("None", "None")] + [(name, name) for name in self.presets_manager.get_all_presets().keys()],
+                value="None",
+                id="preset-select",
+                prompt="Select preset",
+            ),
             Input(placeholder=f"Output: {self.config.general.output_path}", id="output-input"),
-            Horizontal(Button("Download", id="btn-download", variant="primary"), Button("Queue", id="btn-queue", variant="success"), Button("Info", id="btn-info", variant="default"), Button("Clear", id="btn-clear", variant="error"), id="action-buttons"),
-            ScrollableContainer(Static("Video info will appear here...", id="info-panel"), Static("Progress: Waiting...", id="progress-panel"), DataTable(id="queue-table")),
+            Horizontal(
+                Button("Download", id="btn-download", variant="primary"),
+                Button("Queue", id="btn-queue", variant="success"),
+                Button("Info", id="btn-info", variant="default"),
+                Button("Clear", id="btn-clear", variant="error"),
+                id="action-buttons",
+            ),
+            ScrollableContainer(
+                Static("Video info will appear here...", id="info-panel"),
+                Static("Progress: Waiting...", id="progress-panel"),
+                DataTable(id="queue-table"),
+            ),
             Static("[dim]Press Q to quit | D to download | P to pause | R to resume[/dim]", id="status-bar"),
             id="main-container",
         )
@@ -71,13 +94,18 @@ class KyroApp(App):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id
-        if button_id == "btn-download": self.action_download()
-        elif button_id == "btn-queue": self._queue_current()
-        elif button_id == "btn-info": self._fetch_info()
-        elif button_id == "btn-clear": self.action_clear_queue()
+        if button_id == "btn-download":
+            self.action_download()
+        elif button_id == "btn-queue":
+            self._queue_current()
+        elif button_id == "btn-info":
+            self._fetch_info()
+        elif button_id == "btn-clear":
+            self.action_clear_queue()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        if event.input.id == "url-input": self._fetch_info()
+        if event.input.id == "url-input":
+            self._fetch_info()
 
     def action_download(self) -> None:
         url = self.query_one("#url-input", Input).value.strip()
@@ -92,9 +120,11 @@ class KyroApp(App):
         preset_name = self.query_one("#preset-select", Select).value
         preset = self.presets_manager.get_preset(preset_name) if preset_name and preset_name != "None" else None
         output = self.query_one("#output-input", Input).value.strip()
-        if not output: output = self.config.general.output_path
+        if not output:
+            output = self.config.general.output_path
         output = validate_output_path(output)
         self.notify(f"Starting download: {url}", severity="information")
+
         def _download_task():
             try:
                 cfg = self.config.model_dump()
@@ -110,16 +140,17 @@ class KyroApp(App):
                     if preset and preset.get("audio_quality"):
                         cfg["audio_quality"] = preset["audio_quality"]
                     self.manager.config.update(cfg)
-                    self.manager.download_now(url, str(output), only_audio=True)
+                    self.manager.download_now(DownloadOptions(url=url, output_path=str(output), only_audio=True))
                 elif mode == "playlist":
                     self.manager.config.update(cfg)
-                    self.manager.download_playlist(url, str(output))
+                    self.manager.download_playlist(DownloadOptions(url=url, output_path=str(output)))
                 else:
                     self.manager.config.update(cfg)
-                    self.manager.download_now(url, str(output))
+                    self.manager.download_now(DownloadOptions(url=url, output_path=str(output)))
                 self.call_from_thread(self.notify, "Download complete!", severity="success")
             except Exception as e:
                 self.call_from_thread(self.notify, f"Download failed: {e}", severity="error")
+
         threading.Thread(target=_download_task, daemon=True, name="kyro-tui-download").start()
 
     def action_pause_queue(self) -> None:
@@ -128,8 +159,10 @@ class KyroApp(App):
             if item.status.value in ("pending", "downloading"):
                 self.manager.queue.pause(item.task_id)
                 paused += 1
-        if paused > 0: self.notify(f"Paused {paused} download(s)", severity="warning")
-        else: self.notify("Nothing to pause", severity="information")
+        if paused > 0:
+            self.notify(f"Paused {paused} download(s)", severity="warning")
+        else:
+            self.notify("Nothing to pause", severity="information")
 
     def action_resume_queue(self) -> None:
         resumed = 0
@@ -137,8 +170,10 @@ class KyroApp(App):
             if item.status.value == "paused":
                 self.manager.queue.resume(item.task_id)
                 resumed += 1
-        if resumed > 0: self.notify(f"Resumed {resumed} download(s)", severity="information")
-        else: self.notify("Nothing to resume", severity="information")
+        if resumed > 0:
+            self.notify(f"Resumed {resumed} download(s)", severity="information")
+        else:
+            self.notify("Nothing to resume", severity="information")
 
     def action_clear_queue(self) -> None:
         self.manager.queue.clear_all()
@@ -148,7 +183,8 @@ class KyroApp(App):
 
     def _fetch_info(self) -> None:
         url = self.query_one("#url-input", Input).value.strip()
-        if not url: return
+        if not url:
+            return
         url = normalize_url(url)
         if not validate_url(url):
             self.notify(f"Invalid URL: {url}", severity="error")
@@ -157,7 +193,9 @@ class KyroApp(App):
             info = get_video_info(url)
             self.current_info = info
             info_panel = self.query_one("#info-panel", Static)
-            info_panel.update(f"[bold]Title:[/bold] {info.title}\n[bold]Duration:[/bold] {info.duration_str}\n[bold]Uploader:[/bold] {info.uploader}\n[bold]Views:[/bold] {info.view_count_str}")
+            info_panel.update(
+                f"[bold]Title:[/bold] {info.title}\n[bold]Duration:[/bold] {info.duration_str}\n[bold]Uploader:[/bold] {info.uploader}\n[bold]Views:[/bold] {info.view_count_str}"
+            )
             self.notify(f"Loaded: {info.title}", severity="success")
         except Exception as e:
             self.notify(f"Failed to fetch info: {e}", severity="error")
@@ -181,12 +219,15 @@ class KyroApp(App):
                 if preset.get("audio_quality"):
                     cfg["audio_quality"] = preset["audio_quality"]
             self.manager.config.update(cfg)
-            item = self.manager.queue_download(url, only_audio=bool(cfg.get("only_audio", False)))
+            item = self.manager.queue_download(DownloadOptions(url=url, only_audio=bool(cfg.get("only_audio", False))))
             table = self.query_one("#queue-table", DataTable)
-            table.add_row(item.task_id[:8], url[:50] + "..." if len(url) > 50 else url, item.status.value, item.priority.name)
+            table.add_row(
+                item.task_id[:8], url[:50] + "..." if len(url) > 50 else url, item.status.value, item.priority.name
+            )
             self.notify(f"Queued: {item.task_id[:8]}", severity="success")
         except Exception as e:
             self.notify(f"Queue error: {e}", severity="error")
+
 
 def run_tui():
     config = load_config()
@@ -226,6 +267,7 @@ def main() -> None:
 
     app = KyroApp()
     app.run()
+
 
 if __name__ == "__main__":
     main()

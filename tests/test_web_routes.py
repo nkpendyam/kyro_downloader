@@ -27,7 +27,15 @@ class _FakeManager:
         return SimpleNamespace(task_id="t-1", url=kwargs["url"], status=SimpleNamespace(value="pending"))
 
     def get_status(self) -> dict[str, Any]:
-        return {"queue_size": 0, "pending": 0, "active": 0, "completed": 0, "failed": 0, "progress": 0, "executor_running": False}
+        return {
+            "queue_size": 0,
+            "pending": 0,
+            "active": 0,
+            "completed": 0,
+            "failed": 0,
+            "progress": 0,
+            "executor_running": False,
+        }
 
 
 def test_download_route_forwards_advanced_fields(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -145,6 +153,28 @@ def test_api_auth_allows_valid_bearer_token(monkeypatch: pytest.MonkeyPatch) -> 
     assert response.status_code == 200
 
 
+def test_config_update_rejects_missing_token_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    """PUT /api/config should require auth when web.api_token is configured."""
+    fake_manager = _FakeManager()
+    fake_config = SimpleNamespace(
+        general=SimpleNamespace(output_path="downloads"),
+        web=SimpleNamespace(api_token="secret-token"),
+    )
+
+    monkeypatch.setattr(web_routes, "_manager_instance", fake_manager)
+    monkeypatch.setattr(web_routes, "_config_instance", fake_config)
+    monkeypatch.setattr(web_routes, "_ensure_executor_running", lambda: None)
+
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.put(
+        "/api/config",
+        json={"section": "general", "key": "output_path", "value": "downloads"},
+    )
+    assert response.status_code == 401
+
+
 def test_download_route_applies_voice_optimized_preset(monkeypatch: pytest.MonkeyPatch) -> None:
     """/api/download should translate preset into audio/subtitle/output settings."""
     fake_manager = _FakeManager()
@@ -174,9 +204,36 @@ def test_download_route_applies_voice_optimized_preset(monkeypatch: pytest.Monke
     assert queued["output_template"] == "%(uploader)s/%(upload_date)s_%(title)s.%(ext)s"
 
 
-def test_download_route_rejects_output_path_outside_download_dir(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
-) -> None:
+def test_download_route_normalizes_quality_and_forwards_hdr_dolby(monkeypatch: pytest.MonkeyPatch) -> None:
+    """/api/download should pass normalized quality with hdr/dolby flags."""
+    fake_manager = _FakeManager()
+    fake_config = SimpleNamespace(general=SimpleNamespace(output_path="downloads"))
+
+    monkeypatch.setattr(web_routes, "_manager_instance", fake_manager)
+    monkeypatch.setattr(web_routes, "_config_instance", fake_config)
+    monkeypatch.setattr(web_routes, "_ensure_executor_running", lambda: None)
+
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/download",
+        json={
+            "url": "https://example.com/video",
+            "quality": "4k",
+            "hdr": True,
+            "dolby": True,
+        },
+    )
+
+    assert response.status_code == 200
+    queued = fake_manager.queue_calls[0]
+    assert queued["quality"] == "4k"
+    assert queued["hdr"] is True
+    assert queued["dolby"] is True
+
+
+def test_download_route_rejects_output_path_outside_download_dir(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     """/api/download should reject output paths outside configured download directory."""
     fake_manager = _FakeManager()
     base_dir = tmp_path / "downloads"
@@ -202,3 +259,58 @@ def test_download_route_rejects_output_path_outside_download_dir(
 
     assert response.status_code == 403
     assert fake_manager.queue_calls == []
+
+
+def test_download_route_returns_429_when_rate_limited(monkeypatch: pytest.MonkeyPatch) -> None:
+    """/api/download should return 429 when limiter blocks request."""
+    fake_manager = _FakeManager()
+    fake_config = SimpleNamespace(general=SimpleNamespace(output_path="downloads"))
+
+    monkeypatch.setattr(web_routes, "_manager_instance", fake_manager)
+    monkeypatch.setattr(web_routes, "_config_instance", fake_config)
+    monkeypatch.setattr(web_routes, "_ensure_executor_running", lambda: None)
+
+    def _raise_rate(*_args: Any, **_kwargs: Any) -> None:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=429, detail="Too Many Requests", headers={"Retry-After": "30"})
+
+    monkeypatch.setattr(web_routes, "_check_rate_limit", _raise_rate)
+
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.post("/api/download", json={"url": "https://example.com/video"})
+    assert response.status_code == 429
+    assert response.headers.get("Retry-After") == "30"
+
+
+def test_config_update_returns_429_when_rate_limited(monkeypatch: pytest.MonkeyPatch) -> None:
+    """PUT /api/config should surface limiter response with Retry-After."""
+    fake_manager = _FakeManager()
+    fake_config = SimpleNamespace(
+        general=SimpleNamespace(output_path="downloads"),
+        web=SimpleNamespace(api_token="secret-token"),
+    )
+
+    monkeypatch.setattr(web_routes, "_manager_instance", fake_manager)
+    monkeypatch.setattr(web_routes, "_config_instance", fake_config)
+    monkeypatch.setattr(web_routes, "_ensure_executor_running", lambda: None)
+
+    def _raise_rate(*_args: Any, **_kwargs: Any) -> None:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=429, detail="Too Many Requests", headers={"Retry-After": "15"})
+
+    monkeypatch.setattr(web_routes, "_check_rate_limit", _raise_rate)
+
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.put(
+        "/api/config",
+        json={"section": "general", "key": "output_path", "value": "downloads"},
+        headers={"Authorization": "Bearer secret-token"},
+    )
+    assert response.status_code == 429
+    assert response.headers.get("Retry-After") == "15"

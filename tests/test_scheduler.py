@@ -1,11 +1,14 @@
 """Tests for download scheduling service."""
+
 import os
 from src.services.scheduler import DownloadScheduler
+
 
 def test_scheduler_init(temp_dir):
     schedule_file = os.path.join(temp_dir, "schedule.json")
     scheduler = DownloadScheduler(schedule_file)
     assert len(scheduler.list_schedules()) == 0
+
 
 def test_add_schedule(temp_dir):
     schedule_file = os.path.join(temp_dir, "schedule.json")
@@ -16,9 +19,26 @@ def test_add_schedule(temp_dir):
     assert schedule["status"] == "pending"
     assert len(scheduler.list_schedules()) == 1
 
+
 def test_remove_schedule(temp_dir):
     schedule_file = os.path.join(temp_dir, "schedule.json")
     scheduler = DownloadScheduler(schedule_file)
     schedule = scheduler.add_schedule("https://youtube.com/watch?v=test", "2099-01-01T00:00:00")
     scheduler.remove_schedule(schedule["id"])
     assert len(scheduler.list_schedules()) == 0
+
+
+def test_run_due_schedules_executes_callback(temp_dir):
+    schedule_file = os.path.join(temp_dir, "schedule.json")
+    scheduler = DownloadScheduler(schedule_file)
+    schedule = scheduler.add_schedule("https://youtube.com/watch?v=test", "2000-01-01T00:00:00")
+
+    called = []
+
+    def _callback(item):
+        called.append(item["id"])
+
+    executed = scheduler.run_due_schedules(_callback)
+
+    assert executed == 1
+    assert called == [schedule["id"]]

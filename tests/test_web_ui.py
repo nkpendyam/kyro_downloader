@@ -59,3 +59,16 @@ class TestWebUI:
                 ws.send_json({"type": "ping"})
                 payload = ws.receive_json()
                 assert payload["type"] == "pong"
+
+    def test_websocket_accepts_protocol_token_when_configured(self, monkeypatch):
+        from src.ui.web.server import create_app
+        from src.ui.web import websocket as ws_module
+
+        monkeypatch.setattr(ws_module, "_get_configured_api_token", lambda: "secret-token")
+        app = create_app()
+
+        with TestClient(app) as client:
+            with client.websocket_connect("/ws/progress", subprotocols=["bearer secret-token"]) as ws:
+                ws.send_json({"type": "ping"})
+                payload = ws.receive_json()
+                assert payload["type"] == "pong"

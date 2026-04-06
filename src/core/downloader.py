@@ -10,6 +10,7 @@ from src.core.progress import create_progress_hook  # pyright: ignore[reportUnkn
 from src.core.retry import retry  # pyright: ignore[reportUnknownVariableType]
 from src.utils.logger import get_logger  # pyright: ignore[reportUnknownVariableType]
 from src.utils.validation import validate_url  # pyright: ignore[reportUnknownVariableType]
+from src.utils.platform import is_playlist_url
 
 FormatDict = dict[str, Any]
 ConfigDict = dict[str, Any]
@@ -21,6 +22,31 @@ def _retry_sleep(n: int) -> int:
 
 
 logger: Any = get_logger(__name__)
+
+
+def _snapshot_files(output_path: str) -> dict[str, int]:
+    """Snapshot file mtimes within output directory."""
+    snapshot: dict[str, int] = {}
+    if not os.path.isdir(output_path):
+        return snapshot
+    for root, _, filenames in os.walk(output_path):
+        for filename in filenames:
+            filepath = os.path.abspath(os.path.join(root, filename))
+            try:
+                snapshot[filepath] = os.stat(filepath).st_mtime_ns
+            except OSError:
+                continue
+    return snapshot
+
+
+def _collect_written_files(before_snapshot: dict[str, int], output_path: str) -> list[str]:
+    """Collect new or modified files written during a download."""
+    after_snapshot = _snapshot_files(output_path)
+    written_files = [
+        path for path, mtime in after_snapshot.items() if path not in before_snapshot or mtime > before_snapshot[path]
+    ]
+    written_files.sort()
+    return written_files
 
 
 class DownloadError(Exception):
@@ -289,6 +315,8 @@ def get_video_info(
     if not validate_url(url):
         raise DownloadError(f"Invalid URL: {url}", url=url)
     ydl_opts: dict[str, Any] = {"quiet": True, "no_warnings": True, "skip_download": True, "extract_flat": False}
+    if is_playlist_url(url):
+        ydl_opts["extract_flat"] = "in_playlist"
     if cookies_file:
         ydl_opts["cookiefile"] = cookies_file
     elif cookies_from_browser:
@@ -398,7 +426,7 @@ def build_ydl_opts(
     if only_audio:
         ydl_opts["format"] = audio_selector or "bestaudio/best"
         post_args = cast(dict[str, list[str]], ydl_opts["postprocessor_args"])
-        post_args["ffmpeg"].extend(["-b:a", f"{audio_quality}k"])
+        post_args["ffmpeg"] = post_args["ffmpeg"] + ["-b:a", f"{audio_quality}k"]
         ydl_opts["writethumbnail"] = bool(embed_thumbnail and thumbnail_supported)
     else:
         if format_id:
@@ -451,11 +479,24 @@ def download_single(
     progress_tracker: Any | None = None,
     task_id: str | None = None,
     progress_hook: ProgressHook | None = None,
-) -> str:
+) -> list[str]:
     cfg: ConfigDict = config or {}
+    cancel_event = cfg.get("cancel_event")
+    if cancel_event and hasattr(cancel_event, "is_set") and cancel_event.is_set():
+        raise DownloadError("Download cancelled", url=url)
+    before_snapshot = _snapshot_files(output_path)
     hook = progress_hook
     if hook is None and progress_tracker and task_id:
         hook = cast(ProgressHook, create_progress_hook(progress_tracker, task_id))
+
+    def wrapped_hook(progress_data: dict[str, Any]) -> None:
+        if cancel_event and hasattr(cancel_event, "is_set") and cancel_event.is_set():
+            raise DownloadError("Download cancelled", url=url)
+        if hook:
+            hook(progress_data)
+
+    effective_hook = wrapped_hook if cancel_event and hasattr(cancel_event, "is_set") else hook
+
     ydl_opts = build_ydl_opts(
         output_path=output_path,
         format_id=format_id,
@@ -471,7 +512,7 @@ def download_single(
         proxy=cfg.get("proxy"),
         cookies_file=cfg.get("cookies_file"),
         cookies_from_browser=cfg.get("cookies_from_browser"),
-        progress_hook=hook,
+        progress_hook=effective_hook,
         prefer_format=cfg.get("prefer_format", "mp4"),
         fragment_retries=cfg.get("fragment_retries", 10),
         concurrent_fragments=cfg.get("concurrent_fragments", 4),
@@ -485,11 +526,13 @@ def download_single(
         if platform.system() == "Windows":
             time.sleep(0.5)
         logger.info(f"Download complete: {url}")
-        return output_path
+        written_files = _collect_written_files(before_snapshot, output_path)
+        return written_files
     except FileNotFoundError as e:
         if "temp." in str(e) and os.path.exists(output_path):
             logger.info(f"Download complete (postprocessor rename skipped): {url}")
-            return output_path
+            written_files = _collect_written_files(before_snapshot, output_path)
+            return written_files
         raise DownloadError(f"Download failed: {e}", url=url) from e
 
 
@@ -501,8 +544,13 @@ def download_playlist(
     progress_tracker: Any | None = None,
     format_id: str | None = None,
     only_audio: bool = False,
+    cancel_event: Any | None = None,
 ) -> list[str]:
     cfg: ConfigDict = config or {}
+    effective_cancel_event = cancel_event or cfg.get("cancel_event")
+    if effective_cancel_event and hasattr(effective_cancel_event, "is_set") and effective_cancel_event.is_set():
+        return []
+    before_snapshot = _snapshot_files(output_path)
     playlist_cfg = cfg.get("playlist", {})
     ydl_opts = build_ydl_opts(
         output_path=output_path,
@@ -528,9 +576,14 @@ def download_playlist(
     )
     try:
         with yt_dlp.YoutubeDL(cast(Any, ydl_opts)) as ydl:
+            if effective_cancel_event and hasattr(effective_cancel_event, "is_set") and effective_cancel_event.is_set():
+                return _collect_written_files(before_snapshot, output_path)
             ydl.download([url])
+            if effective_cancel_event and hasattr(effective_cancel_event, "is_set") and effective_cancel_event.is_set():
+                return _collect_written_files(before_snapshot, output_path)
         logger.info(f"Playlist download complete: {url}")
-        return [output_path]
+        written_files = _collect_written_files(before_snapshot, output_path)
+        return written_files
     except Exception as e:
         if "DownloadError" in type(e).__name__:
             raise DownloadError(str(e), url=url) from e

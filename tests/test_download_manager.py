@@ -1,4 +1,5 @@
 """Tests for download_manager module."""
+
 from unittest.mock import patch, MagicMock
 from src.core.download_manager import DownloadManager
 
@@ -24,13 +25,13 @@ class TestDownloadManager:
 
     def test_queue_download(self):
         dm = DownloadManager()
-        with patch.object(dm, 'prepare_download', return_value=MagicMock(title="Test")):
+        with patch.object(dm, "prepare_download", return_value=MagicMock(title="Test")):
             item = dm.queue_download("https://youtube.com/watch?v=abc", output_path="/tmp")
             assert item.url == "https://youtube.com/watch?v=abc"
 
     def test_queue_batch(self):
         dm = DownloadManager()
-        with patch.object(dm, 'queue_download') as mock:
+        with patch.object(dm, "queue_download") as mock:
             mock.return_value = MagicMock()
             dm.queue_batch(["https://a.com", "https://b.com"])
             assert mock.call_count == 2
@@ -57,6 +58,7 @@ class TestDownloadManager:
 
     def test_download_now_forwards_progress_hook(self):
         dm = DownloadManager()
+
         def hook(_data):
             return None
 
@@ -71,3 +73,20 @@ class TestDownloadManager:
                         )
 
         assert mock_download.call_args.kwargs["progress_hook"] is hook
+
+    def test_queue_control_methods(self):
+        dm = DownloadManager()
+        item = dm.queue.add("https://youtube.com/watch?v=abc")
+
+        assert dm.pause_queue(item.task_id) is True
+        assert dm.resume_queue(item.task_id) is True
+        assert dm.cancel_queue(item.task_id) is True
+
+    def test_queue_status_and_stats_methods(self):
+        dm = DownloadManager()
+        status = dm.get_queue_status()
+        stats = dm.get_queue_stats()
+
+        assert "queue_size" in status
+        assert "queue" in stats
+        assert "progress" in stats

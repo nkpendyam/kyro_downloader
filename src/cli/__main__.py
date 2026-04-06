@@ -1,11 +1,11 @@
 """CLI entry point with rich formatting."""
 
 import argparse
-import importlib
 import importlib.util
 import os
 import pathlib
 import sys
+import time
 
 from rich import print
 from rich.console import Console
@@ -19,7 +19,7 @@ from src.config.schema import AppConfig
 from src.core.download_manager import DownloadManager
 from src.core.downloader import get_video_info, list_video_formats, build_smart_audio_options
 from src.utils.validation import validate_url, validate_output_path, validate_integer, validate_batch_file
-from src.utils.platform import normalize_url, get_platform_info, get_supported_platforms
+from src.utils.platform import normalize_url, get_platform_info, get_supported_platforms, QUALITY_HEIGHT_MAP
 from src.utils.ytdlp_updater import update_ytdlp, auto_update_on_startup
 from src.utils.logger import setup_logger
 from src.services.presets import apply_preset_config
@@ -38,7 +38,7 @@ def _load_cmd(name):
         spec.loader.exec_module(mod)
         return mod
     except Exception as e:
-        print(f"[bold yellow]Warning: Failed to load command module {name}: {e}[/bold yellow]")
+        print(f"[bold red]Error: Failed to load command module {name}: {e}[/bold red]")
         return None
 
 
@@ -52,6 +52,35 @@ _cmd_channels = _load_cmd("channels")
 _cmd_livestream = _load_cmd("livestream")
 _cmd_chapters = _load_cmd("chapters")
 _cmd_external = _load_cmd("external")
+
+_EXPECTED_COMMAND_MODULES = {
+    "stats": _cmd_stats,
+    "archive": _cmd_archive,
+    "convert": _cmd_convert,
+    "compress": _cmd_compress,
+    "schedule": _cmd_schedule,
+    "search": _cmd_search,
+    "channels": _cmd_channels,
+    "livestream": _cmd_livestream,
+    "chapters": _cmd_chapters,
+    "external": _cmd_external,
+}
+
+_MISSING_COMMAND_MODULES = [name for name, module in _EXPECTED_COMMAND_MODULES.items() if module is None]
+if _MISSING_COMMAND_MODULES:
+    print(
+        "[bold red]CLI command modules failed to load: " + ", ".join(sorted(_MISSING_COMMAND_MODULES)) + "[/bold red]"
+    )
+
+
+def _resolve_cmd(name: str):
+    loaded = _EXPECTED_COMMAND_MODULES.get(name)
+    if loaded is not None:
+        return loaded
+    loaded = _load_cmd(name)
+    _EXPECTED_COMMAND_MODULES[name] = loaded
+    return loaded
+
 
 console = Console()
 
@@ -271,6 +300,7 @@ def create_parser():
         "action", nargs="?", default="list", choices=["list", "enable", "disable", "info"], help="Plugin action"
     )
     plugins_p.add_argument("name", nargs="?", help="Plugin name")
+    subparsers.add_parser("health", help="Validate command module availability")
     subparsers.add_parser("tui", help="Launch Textual TUI")
     web_p = subparsers.add_parser("web", help="Launch Web UI")
     web_p.add_argument("--port", type=int, default=8000, help="Web UI port")
@@ -331,8 +361,9 @@ def cmd_download(args, config):
         if target == "best":
             choice = 0
         else:
-            height_map = {"1080p": 1080, "720p": 720, "480p": 480, "2160p": 2160, "4k": 2160, "8k": 4320}
-            target_h = height_map.get(target)
+            target_h = QUALITY_HEIGHT_MAP.get(target)
+            if target_h is None and target == "2160p":
+                target_h = QUALITY_HEIGHT_MAP.get("4k")
             choice = 0
             if target_h:
                 best_match = None
@@ -392,7 +423,7 @@ def cmd_download(args, config):
     if preset:
         print(f"[bold cyan]Preset applied:[/bold cyan] {args.preset}")
     manager.config.update(cfg)
-    manager.download_now(url, str(output), format_id)
+    manager.download_now(url, str(output), format_id=format_id)
     print("[bold green]Download complete![/bold green]")
 
 
@@ -519,7 +550,20 @@ def cmd_batch(args, config):
     ):
         print(f"  Queued: {item.url} [{item.task_id[:8]}]")
     print(f"\n[bold blue]Starting {len(urls)} downloads with {args.workers} workers...[/bold blue]")
-    manager.execute()
+    manager.execute_async()
+    while True:
+        status = manager.get_status()
+        pending = int(status.get("pending", 0))
+        active = int(status.get("active", 0))
+        failed = int(status.get("failed", 0))
+        completed = int(status.get("completed", 0))
+        print(
+            f"[dim]Queue status:[/dim] pending={pending} active={active} completed={completed} failed={failed}",
+        )
+        if pending == 0 and active == 0:
+            break
+        time.sleep(0.2)
+    manager.wait_for_completion(timeout=5)
     print("[bold green]Batch download complete![/bold green]")
 
 
@@ -696,12 +740,12 @@ def _launch_tui():
         print("[bold red]TUI dependencies not installed. Run: pip install textual[/bold red]")
 
 
-def _launch_web(port=8000):
+def _launch_web(host: str = "127.0.0.1", port: int = 8000) -> None:
     """Launch the Web UI."""
     try:
         from src.ui.web.server import run_web
 
-        run_web(port=port)
+        run_web(host=host, port=port)
     except ImportError:
         print("[bold red]Web UI dependencies not installed. Run: pip install fastapi uvicorn[/bold red]")
 
@@ -845,6 +889,27 @@ def interactive_mode(config):
 
 
 def main():
+    if "--ui" in sys.argv:
+        parser = argparse.ArgumentParser(add_help=False)
+        parser.add_argument("--ui", choices=["cli", "tui", "web"], default="cli")
+        parser.add_argument("--host", default="127.0.0.1")
+        parser.add_argument("--port", type=int, default=8000)
+        parser.add_argument("--config", type=str)
+        parser.add_argument("--no-banner", action="store_true")
+        args, remaining = parser.parse_known_args()
+        if args.ui == "web":
+            _launch_web(args.host, args.port)
+            return
+        if args.ui == "tui":
+            _launch_tui()
+            return
+        sys.argv = [sys.argv[0]]
+        if args.config:
+            sys.argv.extend(["--config", args.config])
+        if args.no_banner:
+            sys.argv.append("--no-banner")
+        sys.argv.extend(remaining)
+
     parser = create_parser()
     args = parser.parse_args()
     try:
@@ -890,83 +955,113 @@ def main():
         "i": cmd_info,
         "platforms": cmd_platforms,
         "stats": lambda a, c: (
-            _cmd_stats.show_stats()
-            if _cmd_stats and hasattr(_cmd_stats, "show_stats")
+            _resolve_cmd("stats").show_stats()
+            if _resolve_cmd("stats") and hasattr(_resolve_cmd("stats"), "show_stats")
             else _command_module_missing("Stats")
         ),
         "archive": lambda a, c: (
-            (_cmd_archive.clear_archive() if getattr(a, "clear", False) else _cmd_archive.show_archive())
-            if _cmd_archive and hasattr(_cmd_archive, "clear_archive") and hasattr(_cmd_archive, "show_archive")
+            (
+                _resolve_cmd("archive").clear_archive()
+                if getattr(a, "clear", False)
+                else _resolve_cmd("archive").show_archive()
+            )
+            if _resolve_cmd("archive")
+            and hasattr(_resolve_cmd("archive"), "clear_archive")
+            and hasattr(_resolve_cmd("archive"), "show_archive")
             else _command_module_missing("Archive")
         ),
         "convert": lambda a, c: (
             (
-                _cmd_convert.convert_batch(a.batch, a.format, remove_original=a.remove_original)
+                _resolve_cmd("convert").convert_batch(a.batch, a.format, remove_original=a.remove_original)
                 if a.batch
-                else _cmd_convert.convert_single(a.input, a.format, remove_original=a.remove_original)
+                else _resolve_cmd("convert").convert_single(a.input, a.format, remove_original=a.remove_original)
             )
-            if _cmd_convert and hasattr(_cmd_convert, "convert_batch") and hasattr(_cmd_convert, "convert_single")
+            if _resolve_cmd("convert")
+            and hasattr(_resolve_cmd("convert"), "convert_batch")
+            and hasattr(_resolve_cmd("convert"), "convert_single")
             else _command_module_missing("Convert")
         ),
         "compress": lambda a, c: (
             (
-                _cmd_compress.compress_batch(a.batch, a.quality, remove_original=a.remove_original)
+                _resolve_cmd("compress").compress_batch(a.batch, a.quality, remove_original=a.remove_original)
                 if a.batch
-                else _cmd_compress.compress_single(a.input, a.quality, remove_original=a.remove_original)
+                else _resolve_cmd("compress").compress_single(a.input, a.quality, remove_original=a.remove_original)
             )
-            if _cmd_compress and hasattr(_cmd_compress, "compress_batch") and hasattr(_cmd_compress, "compress_single")
+            if _resolve_cmd("compress")
+            and hasattr(_resolve_cmd("compress"), "compress_batch")
+            and hasattr(_resolve_cmd("compress"), "compress_single")
             else _command_module_missing("Compress")
         ),
         "schedule": lambda a, c: (
             (
-                _cmd_schedule.add_schedule(a.url, a.time, repeat=a.repeat)
+                _resolve_cmd("schedule").add_schedule(a.url, a.time, repeat=a.repeat)
                 if a.action == "add"
-                else (_cmd_schedule.remove_schedule(a.id) if a.action == "remove" else _cmd_schedule.list_schedules())
+                else (
+                    _resolve_cmd("schedule").remove_schedule(a.id)
+                    if a.action == "remove"
+                    else _resolve_cmd("schedule").list_schedules()
+                )
             )
-            if _cmd_schedule
-            and hasattr(_cmd_schedule, "add_schedule")
-            and hasattr(_cmd_schedule, "remove_schedule")
-            and hasattr(_cmd_schedule, "list_schedules")
+            if _resolve_cmd("schedule")
+            and hasattr(_resolve_cmd("schedule"), "add_schedule")
+            and hasattr(_resolve_cmd("schedule"), "remove_schedule")
+            and hasattr(_resolve_cmd("schedule"), "list_schedules")
             else _command_module_missing("Schedule")
         ),
         "search": lambda a, c: (
-            _cmd_search.search(a.query, a.platform, a.max_results)
-            if _cmd_search and hasattr(_cmd_search, "search")
+            _resolve_cmd("search").search(a.query, a.platform, a.max_results)
+            if _resolve_cmd("search") and hasattr(_resolve_cmd("search"), "search")
             else _command_module_missing("Search")
         ),
         "channel": lambda a, c: (
-            _cmd_channels.channel_info(a.url)
-            if _cmd_channels and hasattr(_cmd_channels, "channel_info")
+            _resolve_cmd("channels").channel_info(a.url)
+            if _resolve_cmd("channels") and hasattr(_resolve_cmd("channels"), "channel_info")
             else _command_module_missing("Channel")
         ),
         "livestream": lambda a, c: (
             (
-                _cmd_livestream.livestream_record(a.url, getattr(a, "output", None) or c.general.output_path, a.timeout)
+                _resolve_cmd("livestream").livestream_record(
+                    a.url,
+                    getattr(a, "output", None) or c.general.output_path,
+                    a.timeout,
+                )
                 if a.record
-                else _cmd_livestream.livestream_download(a.url, getattr(a, "output", None) or c.general.output_path)
+                else _resolve_cmd("livestream").livestream_download(
+                    a.url,
+                    getattr(a, "output", None) or c.general.output_path,
+                )
             )
-            if _cmd_livestream
-            and hasattr(_cmd_livestream, "livestream_record")
-            and hasattr(_cmd_livestream, "livestream_download")
+            if _resolve_cmd("livestream")
+            and hasattr(_resolve_cmd("livestream"), "livestream_record")
+            and hasattr(_resolve_cmd("livestream"), "livestream_download")
             else _command_module_missing("Livestream")
         ),
         "chapters": lambda a, c: (
             (
-                _cmd_chapters.split_chapters(
+                _resolve_cmd("chapters").split_chapters(
                     a.input, getattr(a, "split", None) or getattr(a, "output", None) or c.general.output_path
                 )
                 if getattr(a, "split", None)
-                else _cmd_chapters.show_chapters(a.input)
+                else _resolve_cmd("chapters").show_chapters(a.input)
             )
-            if _cmd_chapters and hasattr(_cmd_chapters, "split_chapters") and hasattr(_cmd_chapters, "show_chapters")
+            if _resolve_cmd("chapters")
+            and hasattr(_resolve_cmd("chapters"), "split_chapters")
+            and hasattr(_resolve_cmd("chapters"), "show_chapters")
             else _command_module_missing("Chapters")
         ),
         "external": lambda a, c: (
-            _cmd_external.external_download(a.url, c.general.output_path, a.connections, getattr(a, "rate_limit", None))
-            if _cmd_external and hasattr(_cmd_external, "external_download")
+            _resolve_cmd("external").external_download(
+                a.url, c.general.output_path, a.connections, getattr(a, "rate_limit", None)
+            )
+            if _resolve_cmd("external") and hasattr(_resolve_cmd("external"), "external_download")
             else _command_module_missing("External")
         ),
         "plugins": lambda a, c: cmd_plugins(a, c),
+        "health": lambda a, c: print(
+            "[bold green]All command modules loadable[/bold green]"
+            if all(_resolve_cmd(name) is not None for name in _EXPECTED_COMMAND_MODULES)
+            else "[bold red]Some command modules failed to load[/bold red]"
+        ),
         "tui": lambda a, c: _launch_tui(),
         "web": lambda a, c: _launch_web(getattr(a, "port", 8000)),
     }

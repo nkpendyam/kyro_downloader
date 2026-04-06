@@ -10,3 +10,4 @@ pydantic
 plyer
 packaging
 mutagen
+python-dotenv

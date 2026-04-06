@@ -1,13 +1,15 @@
 """REST API routes for Kyro Downloader."""
 
-import threading
 import concurrent.futures
+import threading
+import time
 from pathlib import Path
-from typing import Optional
-from fastapi import APIRouter, HTTPException, Header
+from typing import Any
+from fastapi import APIRouter, HTTPException, Header, Depends
 from pydantic import BaseModel, Field, field_validator
 
 from src.config.manager import load_config
+from src.config.schema import AppConfig
 from src.core.download_manager import DownloadManager
 from src.core.queue import Priority
 from src.core.downloader import get_video_info, list_video_formats
@@ -21,8 +23,10 @@ router = APIRouter()
 _manager_lock = threading.Lock()
 _manager_instance = None
 _config_instance = None
-_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="kyro-web")
 _executor_started = threading.Event()
+_rate_limit_lock = threading.Lock()
+_rate_limit_state: dict[str, list[float]] = {}
+_executor: concurrent.futures.ThreadPoolExecutor | None = None
 
 # Sensitive config fields to redact from API responses
 _SENSITIVE_FIELDS = {"proxy", "cookies_file", "credentials_file", "token", "api_token", "password", "secret"}
@@ -52,6 +56,51 @@ def _safe_output_path(path, base_path):
     return resolved
 
 
+def _check_rate_limit(bucket: str, limit: int, window_seconds: int = 60) -> None:
+    now = time.time()
+    with _rate_limit_lock:
+        stale_cutoff = now - window_seconds
+        stale_buckets = []
+        for bucket_name, entries in _rate_limit_state.items():
+            kept = [entry for entry in entries if entry >= stale_cutoff]
+            if kept:
+                _rate_limit_state[bucket_name] = kept
+            else:
+                stale_buckets.append(bucket_name)
+        for bucket_name in stale_buckets:
+            _rate_limit_state.pop(bucket_name, None)
+
+        timestamps = _rate_limit_state.get(bucket, [])
+        timestamps = [t for t in timestamps if now - t < window_seconds]
+        if len(timestamps) >= limit:
+            retry_after = max(1, int(window_seconds - (now - timestamps[0])))
+            raise HTTPException(
+                status_code=429,
+                detail="Too Many Requests",
+                headers={"Retry-After": str(retry_after)},
+            )
+        timestamps.append(now)
+        _rate_limit_state[bucket] = timestamps
+
+
+def get_executor() -> concurrent.futures.ThreadPoolExecutor:
+    global _executor
+    if _executor is None:
+        with _manager_lock:
+            if _executor is None:
+                _executor = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="kyro-web")
+    return _executor
+
+
+def shutdown_executor() -> None:
+    global _executor
+    with _manager_lock:
+        if _executor is not None:
+            _executor.shutdown(wait=False, cancel_futures=True)
+            _executor = None
+            _executor_started.clear()
+
+
 def get_manager():
     global _manager_instance, _config_instance
     if _manager_instance is None:
@@ -79,8 +128,8 @@ def _get_configured_api_token():
 
 
 async def require_api_auth(
-    authorization: Optional[str] = Header(default=None),
-    x_api_token: Optional[str] = Header(default=None, alias="X-API-Token"),
+    authorization: str | None = Header(default=None),
+    x_api_token: str | None = Header(default=None, alias="X-API-Token"),
 ):
     """Require bearer or X-API-Token when web.api_token is configured."""
     configured_token = _get_configured_api_token()
@@ -100,41 +149,41 @@ def _ensure_executor_running():
         with _manager_lock:
             if not _executor_started.is_set():
                 manager = get_manager()
-                _executor.submit(manager.execute)
+                get_executor().submit(manager.execute)
                 _executor_started.set()
 
 
 class DownloadRequest(BaseModel):
     url: str = Field(max_length=2048)
-    output_path: Optional[str] = Field(default=None, max_length=512)
-    format_id: Optional[str] = Field(default=None, max_length=64)
+    output_path: str | None = Field(default=None, max_length=512)
+    format_id: str | None = Field(default=None, max_length=64)
     only_audio: bool = False
     quality: str = "best"
     hdr: bool = False
     dolby: bool = False
     audio_format: str = "mp3"
     audio_quality: str = "192"
-    audio_selector: Optional[str] = Field(default=None, max_length=128)
+    audio_selector: str | None = Field(default=None, max_length=128)
     priority: str = "normal"
     subtitles: bool | dict = False
     sponsorblock: bool = False
     preset: str = "none"
-    output_template: Optional[str] = Field(default=None, max_length=256)
+    output_template: str | None = Field(default=None, max_length=256)
 
 
 class BatchRequest(BaseModel):
     urls: list[str] = Field(min_length=1, max_length=100)
-    output_path: Optional[str] = Field(default=None, max_length=512)
+    output_path: str | None = Field(default=None, max_length=512)
     only_audio: bool = False
     quality: str = "best"
     hdr: bool = False
     dolby: bool = False
     audio_format: str = "mp3"
     audio_quality: str = "192"
-    audio_selector: Optional[str] = Field(default=None, max_length=128)
+    audio_selector: str | None = Field(default=None, max_length=128)
     subtitles: bool | dict = False
     sponsorblock: bool = False
-    output_template: Optional[str] = Field(default=None, max_length=256)
+    output_template: str | None = Field(default=None, max_length=256)
     workers: int = 3
 
     @field_validator("urls")
@@ -151,26 +200,48 @@ class BatchRequest(BaseModel):
 
 class PlaylistRequest(BaseModel):
     url: str = Field(max_length=2048)
-    output_path: Optional[str] = Field(default=None, max_length=512)
+    output_path: str | None = Field(default=None, max_length=512)
     only_audio: bool = False
     quality: str = "best"
     hdr: bool = False
     dolby: bool = False
     audio_format: str = "mp3"
     audio_quality: str = "192"
-    audio_selector: Optional[str] = Field(default=None, max_length=128)
+    audio_selector: str | None = Field(default=None, max_length=128)
     subtitles: bool | dict = False
     sponsorblock: bool = False
-    output_template: Optional[str] = Field(default=None, max_length=256)
+    output_template: str | None = Field(default=None, max_length=256)
 
 
-def _resolve_download_profile(req: DownloadRequest) -> tuple[bool, str, str, dict | None, str | None]:
+def _normalize_quality(value: str) -> str:
+    """Normalize quality labels to manager-supported values."""
+    normalized = value.strip().lower()
+    quality_map = {
+        "best": "best",
+        "8k": "8k",
+        "4320p": "8k",
+        "4k": "4k",
+        "2160p": "4k",
+        "1080p": "1080p",
+        "720p": "720p",
+        "480p": "480p",
+        "360p": "360p",
+        "240p": "240p",
+        "144p": "144p",
+    }
+    return quality_map.get(normalized, normalized)
+
+
+def _resolve_download_profile(req: DownloadRequest) -> dict[str, object]:
     """Resolve effective download fields with optional preset support."""
     subtitles_cfg = _resolve_subtitles_request(req.subtitles)
     output_template = req.output_template
     only_audio = req.only_audio
     audio_format = req.audio_format
     audio_quality = req.audio_quality
+    quality = _normalize_quality(req.quality)
+    hdr = req.hdr
+    dolby = req.dolby
 
     preset = PRESET_PROFILES.get(req.preset)
     if preset:
@@ -182,10 +253,19 @@ def _resolve_download_profile(req: DownloadRequest) -> tuple[bool, str, str, dic
         if preset_output_template is not None:
             output_template = str(preset_output_template)
 
-    return only_audio, audio_format, audio_quality, subtitles_cfg, output_template
+    return {
+        "only_audio": only_audio,
+        "audio_format": audio_format,
+        "audio_quality": audio_quality,
+        "subtitles_cfg": subtitles_cfg,
+        "output_template": output_template,
+        "quality": quality,
+        "hdr": hdr,
+        "dolby": dolby,
+    }
 
 
-def _resolve_subtitles_request(subtitles):
+def _resolve_subtitles_request(subtitles: bool | dict[str, Any]) -> dict[str, Any] | None:
     """Normalize bool/dict subtitle payloads into downloader config."""
     if isinstance(subtitles, dict):
         return subtitles
@@ -208,6 +288,7 @@ class ConfigUpdate(BaseModel):
 
 @router.post("/download")
 async def queue_download(req: DownloadRequest):
+    _check_rate_limit("api_download", limit=30)
     url = normalize_url(req.url)
     if not validate_url(url):
         raise HTTPException(status_code=400, detail="Invalid URL")
@@ -223,23 +304,23 @@ async def queue_download(req: DownloadRequest):
         "critical": Priority.CRITICAL,
     }
     priority = priority_map.get(req.priority, Priority.NORMAL)
-    only_audio, audio_format, audio_quality, subtitles_cfg, output_template = _resolve_download_profile(req)
+    profile = _resolve_download_profile(req)
     sponsorblock_cfg = {"enabled": True} if req.sponsorblock else None
     item = manager.queue_download(
         url=url,
         output_path=str(output),
         format_id=req.format_id,
-        only_audio=only_audio,
+        only_audio=bool(profile["only_audio"]),
         priority=priority,
-        quality=req.quality,
-        hdr=req.hdr,
-        dolby=req.dolby,
-        audio_format=audio_format,
-        audio_quality=audio_quality,
+        quality=str(profile["quality"]),
+        hdr=bool(profile["hdr"]),
+        dolby=bool(profile["dolby"]),
+        audio_format=str(profile["audio_format"]),
+        audio_quality=str(profile["audio_quality"]),
         audio_selector=req.audio_selector,
-        subtitles=subtitles_cfg,
+        subtitles=profile["subtitles_cfg"],
         sponsorblock=sponsorblock_cfg,
-        output_template=output_template,
+        output_template=profile["output_template"],
     )
     _ensure_executor_running()
     return {
@@ -265,7 +346,7 @@ async def batch_download(req: BatchRequest):
             url=url,
             output_path=str(output),
             only_audio=req.only_audio,
-            quality=req.quality,
+            quality=_normalize_quality(req.quality),
             hdr=req.hdr,
             dolby=req.dolby,
             audio_format=req.audio_format,
@@ -293,21 +374,21 @@ async def download_playlist_req(req: PlaylistRequest):
     _safe_output_path(output, output_base)
     subtitles_cfg = _resolve_subtitles_request(req.subtitles)
     sponsorblock_cfg = {"enabled": True} if req.sponsorblock else None
-    _executor.submit(
+    get_executor().submit(
         manager.download_playlist,
-        url,
-        str(output),
-        None,
-        req.only_audio,
-        req.quality,
-        req.hdr,
-        req.dolby,
-        req.audio_format,
-        req.audio_quality,
-        req.audio_selector,
-        subtitles_cfg,
-        sponsorblock_cfg,
-        req.output_template,
+        url=url,
+        output_path=str(output),
+        format_id=None,
+        only_audio=req.only_audio,
+        quality=_normalize_quality(req.quality),
+        hdr=req.hdr,
+        dolby=req.dolby,
+        audio_format=req.audio_format,
+        audio_quality=req.audio_quality,
+        audio_selector=req.audio_selector,
+        subtitles=subtitles_cfg,
+        sponsorblock=sponsorblock_cfg,
+        output_template=req.output_template,
     )
     return {"message": "Playlist download started in background"}
 
@@ -404,9 +485,10 @@ async def get_config_endpoint():
     return _redact_config(get_config().model_dump())
 
 
-@router.put("/config")
+@router.put("/config", dependencies=[Depends(require_api_auth)])
 async def update_config(req: ConfigUpdate):
     try:
+        _check_rate_limit("api_config_write", limit=10)
         section, key, value = req.section, req.key, req.value
         if value.lower() in ("true", "yes", "1"):
             value = True
@@ -425,9 +507,10 @@ async def update_config(req: ConfigUpdate):
             current = _config_instance.model_dump() if _config_instance else load_config().model_dump()
             if section in current and key in current[section]:
                 current[section][key] = value
-                from src.config.schema import AppConfig
-
-                _config_instance = AppConfig(**current)
+                try:
+                    _config_instance = AppConfig.model_validate(current)
+                except Exception as e:
+                    raise HTTPException(status_code=422, detail=f"Invalid config value: {e}") from e
                 _manager_instance = DownloadManager(_config_instance.model_dump())
                 return {"message": f"Updated {section}.{key} = {value}"}
         raise HTTPException(status_code=400, detail="Invalid config key")

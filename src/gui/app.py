@@ -11,12 +11,14 @@ import customtkinter as ctk
 
 from src import __version__
 from src.config.manager import load_config, save_config
-from src.core.download_manager import DownloadManager
+from src.core.download_manager import DownloadManager, DownloadOptions
+from src.core.queue import Priority
 from src.core.downloader import get_video_info, build_quality_labels, build_smart_audio_options
 from src.utils.validation import validate_url, validate_output_path
-from src.utils.platform import normalize_url, get_platform_info
+from src.utils.platform import normalize_url, get_platform_info, QUALITY_HEIGHT_MAP
 from src.services.statistics import StatsTracker
 from src.services.archive import DownloadArchive
+from src.services.scheduler import DownloadScheduler
 from src.gui.components import PresetsManager, DragDropHandler
 from src.utils.logger import get_logger
 
@@ -37,6 +39,7 @@ class KyroApp(ctk.CTk):
         self.manager = DownloadManager(self.config.model_dump())
         self.stats = StatsTracker()
         self.archive = DownloadArchive()
+        self.scheduler = DownloadScheduler()
         self.presets_manager = PresetsManager()
         self.drag_drop_handler = DragDropHandler(on_url_dropped=self._handle_dropped_urls)
 
@@ -48,6 +51,7 @@ class KyroApp(ctk.CTk):
         self._download_start_time = None
         self._queue_refresh_timer = None
         self._audio_options = {}
+        self._scheduler_running = False
 
         # Build UI
         self._build_ui()
@@ -375,6 +379,66 @@ class KyroApp(ctk.CTk):
             cfg["audio_selector_preference"] = preset["prefer_codec"]
         return only_audio
 
+    def _build_download_config(self) -> dict[str, object]:
+        """Build normalized download request config from GUI state."""
+        quality_label = self.quality_combo.get()
+        quality = "best"
+        for q in ["8k", "4k", "1080p", "720p", "480p"]:
+            if q in quality_label.lower():
+                quality = q
+                break
+
+        only_audio = self.format_combo.get() == "audio"
+        preset_cfg = self._selected_gui_preset()
+        if preset_cfg and preset_cfg.get("only_audio"):
+            only_audio = True
+
+        audio_format = "mp3"
+        audio_quality = "192"
+        audio_selector = None
+        if only_audio:
+            selected = self._audio_options.get(self.audio_quality_combo.get(), {})
+            audio_format = selected.get("audio_format", self.audio_format_combo.get())
+            audio_quality = selected.get("audio_quality", "192")
+            audio_selector = selected.get("selector")
+
+        subtitles_cfg = None
+        if self.subtitle_enabled_var.get():
+            languages = [lang.strip() for lang in self.subtitle_lang_entry.get().split(",") if lang.strip()]
+            subtitles_cfg = {
+                "enabled": True,
+                "languages": languages or ["en"],
+                "embed": self.subtitle_embed_var.get() and not only_audio,
+                "auto_generated": True,
+                "format": "srt",
+            }
+
+        cfg = self.config.model_dump()
+        cfg["hdr"] = "HDR" in quality_label
+        cfg["dolby"] = "Dolby" in quality_label
+        cfg["audio_format"] = audio_format
+        cfg["audio_quality"] = audio_quality
+        cfg["audio_selector"] = audio_selector
+        if subtitles_cfg:
+            cfg["subtitles"] = subtitles_cfg
+        if preset_cfg:
+            selected_only_audio = self._apply_gui_preset(cfg, only_audio)
+            if selected_only_audio is not None:
+                only_audio = selected_only_audio
+
+        return {
+            "quality": quality,
+            "hdr": cfg.get("hdr", False),
+            "dolby": cfg.get("dolby", False),
+            "only_audio": only_audio,
+            "audio_format": cfg.get("audio_format", audio_format),
+            "audio_quality": cfg.get("audio_quality", audio_quality),
+            "audio_selector": cfg.get("audio_selector", audio_selector),
+            "subtitles_cfg": cfg.get("subtitles"),
+            "output_template": cfg.get("output_template"),
+            "manager_config": cfg,
+        }
+
     def _selected_gui_preset(self):
         """Return the active GUI preset config, if any."""
         preset_name = self.preset_combo.get() if hasattr(self, "preset_combo") else "None"
@@ -387,36 +451,14 @@ class KyroApp(ctk.CTk):
             return
         url = self._current_url
         output = validate_output_path(self.config.general.output_path)
-        only_audio = self.format_combo.get() == "audio"
-        preset_cfg = self._selected_gui_preset()
-        if preset_cfg and preset_cfg.get("only_audio"):
-            only_audio = True
-        quality_label = self.quality_combo.get()
-        hdr = "HDR" in quality_label
-        dolby = "Dolby" in quality_label
-        quality = "best"
-        for q in ["8k", "4k", "1080p", "720p", "480p"]:
-            if q in quality_label.lower():
-                quality = q
-                break
-        audio_format = "mp3"
-        audio_quality = "192"
-        audio_selector = None
-        subtitles_cfg = None
-        if only_audio:
-            selected = self._audio_options.get(self.audio_quality_combo.get(), {})
-            audio_format = selected.get("audio_format", self.audio_format_combo.get())
-            audio_quality = selected.get("audio_quality", "192")
-            audio_selector = selected.get("selector")
-        if self.subtitle_enabled_var.get():
-            languages = [lang.strip() for lang in self.subtitle_lang_entry.get().split(",") if lang.strip()]
-            subtitles_cfg = {
-                "enabled": True,
-                "languages": languages or ["en"],
-                "embed": self.subtitle_embed_var.get() and not only_audio,
-                "auto_generated": True,
-                "format": "srt",
-            }
+        request_cfg = self._build_download_config()
+        quality = str(request_cfg["quality"])
+        hdr = bool(request_cfg["hdr"])
+        dolby = bool(request_cfg["dolby"])
+        audio_format = str(request_cfg["audio_format"])
+        audio_quality = str(request_cfg["audio_quality"])
+        audio_selector = request_cfg["audio_selector"]
+        subtitles_cfg = request_cfg["subtitles_cfg"]
         self._download_cancelled = False
         self._download_start_time = time.time()
         self.progress.pack(fill="x", padx=20, pady=5)
@@ -430,7 +472,6 @@ class KyroApp(ctk.CTk):
         self._start_queue_refresh()
 
         def _download():
-            download_only_audio = only_audio
             try:
 
                 def progress_hook(d):
@@ -445,38 +486,30 @@ class KyroApp(ctk.CTk):
                             pct_val = 0
                         self.after(0, lambda v=pct_val, t=f"{pct} - {speed}", s=speed: self._update_progress(v, t, s))
 
-                cfg = self.config.model_dump()
-                cfg["hdr"] = hdr
-                cfg["dolby"] = dolby
-                cfg["audio_format"] = audio_format
-                cfg["audio_quality"] = audio_quality
-                cfg["audio_selector"] = audio_selector
-                if subtitles_cfg:
-                    cfg["subtitles"] = subtitles_cfg
-                if preset_cfg:
-                    selected_only_audio = self._apply_gui_preset(cfg, download_only_audio)
-                    if selected_only_audio is not None:
-                        download_only_audio = selected_only_audio
+                cfg = dict(request_cfg["manager_config"])
                 cfg["format_id"] = None
-                if download_only_audio:
+                if request_cfg["only_audio"]:
                     cfg["only_audio"] = True
                 if quality != "best" and not hdr and not dolby:
-                    height_map = {"8k": 4320, "4k": 2160, "1080p": 1080, "720p": 720, "480p": 480}
-                    target_h = height_map.get(quality)
+                    target_h = QUALITY_HEIGHT_MAP.get(quality)
                     if target_h:
                         cfg["format"] = f"bestvideo[height<={target_h}]+bestaudio/best[ext=m4a]/best"
-                self.manager.config.update(cfg)
                 self.manager.download_now(
-                    url,
-                    str(output),
-                    only_audio=download_only_audio,
-                    quality=quality,
-                    hdr=hdr,
-                    dolby=dolby,
-                    audio_format=audio_format,
-                    audio_quality=audio_quality,
-                    audio_selector=audio_selector,
+                    DownloadOptions(
+                        url=url,
+                        output_path=str(output),
+                        only_audio=bool(request_cfg["only_audio"]),
+                        quality=quality,
+                        hdr=hdr,
+                        dolby=dolby,
+                        audio_format=audio_format,
+                        audio_quality=audio_quality,
+                        audio_selector=audio_selector,
+                        subtitles_cfg=subtitles_cfg,
+                        output_template=request_cfg["output_template"],
+                    ),
                     progress_hook=progress_hook,
+                    config=cfg,
                 )
                 self.after(0, lambda: self._add_archive_entry(url, "completed"))
                 self.after(0, lambda: self._download_complete(True, "Download complete!"))
@@ -548,52 +581,25 @@ class KyroApp(ctk.CTk):
             return
         url = self._current_url
         output = validate_output_path(self.config.general.output_path)
-        only_audio = self.format_combo.get() == "audio"
-        quality_label = self.quality_combo.get()
-        hdr = "HDR" in quality_label
-        dolby = "Dolby" in quality_label
-        quality = "best"
-        for q in ["8k", "4k", "1080p", "720p", "480p"]:
-            if q in quality_label.lower():
-                quality = q
-                break
-        audio_format = "mp3"
-        audio_quality = "192"
-        audio_selector = None
-        subtitles_cfg = None
-        preset_cfg = self._selected_gui_preset()
-        if preset_cfg and preset_cfg.get("only_audio"):
-            only_audio = True
-        if only_audio:
-            selected = self._audio_options.get(self.audio_quality_combo.get(), {})
-            audio_format = selected.get("audio_format", self.audio_format_combo.get())
-            audio_quality = selected.get("audio_quality", "192")
-            audio_selector = selected.get("selector")
-        if self.subtitle_enabled_var.get():
-            languages = [lang.strip() for lang in self.subtitle_lang_entry.get().split(",") if lang.strip()]
-            subtitles_cfg = {
-                "enabled": True,
-                "languages": languages or ["en"],
-                "embed": self.subtitle_embed_var.get() and not only_audio,
-                "auto_generated": True,
-                "format": "srt",
-            }
-            self.manager.config["subtitles"] = subtitles_cfg
-        cfg = self.config.model_dump()
-        self._apply_gui_preset(cfg, only_audio)
-        self.manager.config.update(cfg)
+        request_cfg = self._build_download_config()
+        cfg = dict(request_cfg["manager_config"])
         item = self.manager.queue_download(
-            url,
-            output_path=str(output),
-            only_audio=only_audio,
-            quality=quality,
-            hdr=hdr,
-            dolby=dolby,
-            audio_format=audio_format,
-            audio_quality=audio_quality,
-            audio_selector=audio_selector,
-            subtitles=subtitles_cfg,
-            output_template=cfg.get("output_template"),
+            DownloadOptions(
+                url=url,
+                output_path=str(output),
+                only_audio=bool(request_cfg["only_audio"]),
+                quality=str(request_cfg["quality"]),
+                hdr=bool(request_cfg["hdr"]),
+                dolby=bool(request_cfg["dolby"]),
+                audio_format=str(request_cfg["audio_format"]),
+                audio_quality=str(request_cfg["audio_quality"]),
+                audio_selector=request_cfg["audio_selector"],
+                subtitles_cfg=request_cfg["subtitles_cfg"],
+                output_template=request_cfg["output_template"],
+                proxy=cfg.get("proxy"),
+                cookies_file=cfg.get("cookies_file"),
+                cookies_from_browser=cfg.get("cookies_from_browser"),
+            )
         )
         self.status_label.configure(text=f"Queued: {url[:50]}... (ID: {item.task_id[:8]})", text_color="#2ECC71")
         self._refresh_queue()
@@ -609,60 +615,26 @@ class KyroApp(ctk.CTk):
 
             urls = validate_batch_file(filepath)
             output = validate_output_path(self.config.general.output_path)
-            quality_label = self.quality_combo.get()
-            hdr = "HDR" in quality_label
-            dolby = "Dolby" in quality_label
-            quality = "best"
-            for q in ["8k", "4k", "1080p", "720p", "480p"]:
-                if q in quality_label.lower():
-                    quality = q
-                    break
-            only_audio = self.format_combo.get() == "audio"
-            preset_cfg = self._selected_gui_preset()
-            if preset_cfg and preset_cfg.get("only_audio"):
-                only_audio = True
-            audio_format = "mp3"
-            audio_quality = "192"
-            audio_selector = None
-            subtitles_cfg = None
-            if only_audio:
-                selected = self._audio_options.get(self.audio_quality_combo.get(), {})
-                audio_format = selected.get("audio_format", self.audio_format_combo.get())
-                audio_quality = selected.get("audio_quality", "192")
-                audio_selector = selected.get("selector")
-            if self.subtitle_enabled_var.get():
-                languages = [lang.strip() for lang in self.subtitle_lang_entry.get().split(",") if lang.strip()]
-                subtitles_cfg = {
-                    "enabled": True,
-                    "languages": languages or ["en"],
-                    "embed": self.subtitle_embed_var.get() and not only_audio,
-                    "auto_generated": True,
-                    "format": "srt",
-                }
-            cfg = self.config.model_dump()
-            cfg["hdr"] = hdr
-            cfg["dolby"] = dolby
-            cfg["audio_format"] = audio_format
-            cfg["audio_quality"] = audio_quality
-            cfg["audio_selector"] = audio_selector
-            if subtitles_cfg:
-                cfg["subtitles"] = subtitles_cfg
-            if preset_cfg:
-                self._apply_gui_preset(cfg, only_audio)
-            self.manager.config.update(cfg)
+            request_cfg = self._build_download_config()
+            cfg = dict(request_cfg["manager_config"])
             for url in urls:
                 self.manager.queue_download(
-                    url,
-                    output_path=str(output),
-                    only_audio=only_audio,
-                    quality=quality,
-                    hdr=hdr,
-                    dolby=dolby,
-                    audio_format=audio_format,
-                    audio_quality=audio_quality,
-                    audio_selector=audio_selector,
-                    subtitles=subtitles_cfg,
-                    output_template=cfg.get("output_template"),
+                    DownloadOptions(
+                        url=url,
+                        output_path=str(output),
+                        only_audio=bool(request_cfg["only_audio"]),
+                        quality=str(request_cfg["quality"]),
+                        hdr=bool(request_cfg["hdr"]),
+                        dolby=bool(request_cfg["dolby"]),
+                        audio_format=str(request_cfg["audio_format"]),
+                        audio_quality=str(request_cfg["audio_quality"]),
+                        audio_selector=request_cfg["audio_selector"],
+                        subtitles_cfg=request_cfg["subtitles_cfg"],
+                        output_template=request_cfg["output_template"],
+                        proxy=cfg.get("proxy"),
+                        cookies_file=cfg.get("cookies_file"),
+                        cookies_from_browser=cfg.get("cookies_from_browser"),
+                    )
                 )
             self.manager.execute_async()
             self.status_label.configure(text=f"Started {len(urls)} downloads", text_color="#2ECC71")
@@ -867,22 +839,29 @@ class KyroApp(ctk.CTk):
         if not url or not validate_url(url):
             self.status_label.configure(text="Enter a valid URL first", text_color="#E74C3C")
             return
-        from src.services.scheduler import DownloadScheduler
-
-        scheduler = DownloadScheduler()
         import datetime
 
         scheduled_time = (datetime.datetime.now() + datetime.timedelta(minutes=5)).isoformat()
-        scheduler.add_schedule(url, scheduled_time, output_path=self.config.general.output_path)
+        self.scheduler.add_schedule(url, scheduled_time, output_path=self.config.general.output_path)
+
+        def _enqueue(schedule: dict[str, object]) -> None:
+            self.manager.queue_download(
+                url=str(schedule["url"]),
+                output_path=str(schedule.get("output_path") or self.config.general.output_path),
+                format_id=schedule.get("format_id"),
+                only_audio=bool(schedule.get("only_audio", False)),
+                priority=Priority.NORMAL,
+            )
+
+        if not self._scheduler_running:
+            self.scheduler.start_scheduler(_enqueue)
+            self._scheduler_running = True
         self.status_label.configure(text="Schedule added!", text_color="#2ECC71")
         self._refresh_schedule()
 
     def _refresh_schedule(self):
         self.schedule_text.delete("1.0", "end")
-        from src.services.scheduler import DownloadScheduler
-
-        scheduler = DownloadScheduler()
-        schedules = scheduler.list_schedules()
+        schedules = self.scheduler.list_schedules()
         if not schedules:
             self.schedule_text.insert("1.0", "No scheduled downloads")
             return
@@ -1020,6 +999,12 @@ class KyroApp(ctk.CTk):
     def _toggle_theme(self):
         current = ctk.get_appearance_mode()
         ctk.set_appearance_mode("Light" if current == "Dark" else "Dark")
+
+    def destroy(self):
+        if self._scheduler_running:
+            self.scheduler.stop_scheduler()
+            self._scheduler_running = False
+        super().destroy()
 
 
 def main():

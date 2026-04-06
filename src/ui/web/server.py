@@ -1,8 +1,10 @@
 """FastAPI web server for Kyro Downloader."""
+
 import os
 import argparse
 
 from src import __version__
+
 
 def create_app(enable_auto_update=False):
     try:
@@ -18,16 +20,35 @@ def create_app(enable_auto_update=False):
     from src.ui.web.routes import router as api_router, require_api_auth
     from src.ui.web.websocket import router as ws_router
     from src.ui.web.routes_files import router as files_router
+    from src.ui.web.routes import shutdown_executor
 
-    config = load_config()
-    if enable_auto_update and getattr(config.general, "auto_update", False) and not os.environ.get("PYTEST_CURRENT_TEST"):
+    try:
+        config = load_config()
+    except Exception as e:
+        raise RuntimeError(f"Invalid configuration: {e}") from e
+    if (
+        enable_auto_update
+        and getattr(config.general, "auto_update", False)
+        and not os.environ.get("PYTEST_CURRENT_TEST")
+    ):
         from src.utils.ytdlp_updater import auto_update_on_startup
+
         auto_update_on_startup(check_only=False)
     web_config = config.web
-    app = FastAPI(title="Kyro Downloader API", description="REST API and WebSocket interface for Kyro Downloader by nkpendyam", version="1.0.0")
+    app = FastAPI(
+        title="Kyro Downloader API",
+        description="REST API and WebSocket interface for Kyro Downloader by nkpendyam",
+        version="1.0.0",
+    )
     cors_origins = web_config.cors_origins
     allow_creds = "*" not in cors_origins
-    app.add_middleware(CORSMiddleware, allow_origins=cors_origins, allow_credentials=allow_creds, allow_methods=["*"], allow_headers=["*"])
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=allow_creds,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.include_router(api_router, prefix="/api", dependencies=[Depends(require_api_auth)])
     app.include_router(ws_router, prefix="/ws")
     app.include_router(files_router, prefix="/api/files", dependencies=[Depends(require_api_auth)])
@@ -39,6 +60,7 @@ def create_app(enable_auto_update=False):
     if os.path.exists(template_path):
         with open(template_path, "r", encoding="utf-8") as f:
             _index_html = f.read()
+
     @app.get("/", response_class=HTMLResponse)
     async def index():
         return _index_html if _index_html else "<h1>Kyro Downloader</h1><p>Web UI templates not found</p>"
@@ -47,10 +69,16 @@ def create_app(enable_auto_update=False):
     async def health():
         return {"status": "ok"}
 
+    @app.on_event("shutdown")
+    async def _shutdown_web_executor():
+        shutdown_executor()
+
     return app
+
 
 def run_web(host="127.0.0.1", port=8000, debug=False):
     import uvicorn
+
     app = create_app(enable_auto_update=True)
     uvicorn.run(app, host=host, port=port, reload=debug, log_level="debug" if debug else "info")
 
@@ -74,11 +102,15 @@ def main() -> None:
 
     from src.config.manager import load_config
 
-    config = load_config()
+    try:
+        config = load_config()
+    except Exception as e:
+        raise RuntimeError(f"Invalid configuration: {e}") from e
     host = args.host or config.web.host
     port = args.port or config.web.port
     debug = bool(args.debug or config.web.debug)
     run_web(host=host, port=port, debug=debug)
+
 
 if __name__ == "__main__":
     main()

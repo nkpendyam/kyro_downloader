@@ -1,4 +1,5 @@
 """Tests for download queue module."""
+
 from src.core.queue import DownloadQueue, Priority, QueueItem
 
 
@@ -54,6 +55,7 @@ class TestDownloadQueue:
         item = queue.add(url="https://example.com")
         queue.cancel(item.task_id)
         assert item.status.value == "cancelled"
+        assert item._cancel_event.is_set() is True
 
     def test_pending_count(self):
         queue = DownloadQueue()

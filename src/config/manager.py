@@ -4,6 +4,7 @@ import copy
 import os
 import yaml
 from pathlib import Path
+from dotenv import load_dotenv
 from src.config.defaults import DEFAULT_CONFIG
 from src.config.schema import AppConfig
 from src.utils.logger import get_logger
@@ -11,6 +12,22 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 CONFIG_DIRS = [Path.home() / ".config" / "kyro", Path.home() / ".kyro", Path.cwd() / "config"]
+
+
+class ConfigValidationError(ValueError):
+    """Raised when application configuration fails validation."""
+
+
+class ConfigSaveError(OSError):
+    """Raised when configuration cannot be persisted to disk."""
+
+
+def validate_config(config_dict):
+    """Validate raw config mapping and return parsed app config."""
+    try:
+        return AppConfig(**config_dict)
+    except Exception as e:
+        raise ConfigValidationError(str(e)) from e
 
 
 def deep_merge(base, override):
@@ -42,6 +59,7 @@ def load_config_file(filepath):
 
 
 def load_env_config():
+    load_dotenv()
     config = {}
     prefix = "KYRO_"
     for key, value in os.environ.items():
@@ -92,10 +110,10 @@ def load_config(config_path=None):
         config = deep_merge(config, env_config)
         logger.debug("Applied environment variable overrides")
     try:
-        return AppConfig(**config)
-    except Exception as e:
-        logger.warning(f"Config validation failed: {e}. Using defaults.")
-        return AppConfig()
+        return validate_config(config)
+    except ConfigValidationError as e:
+        logger.error(f"Config validation failed: {e}")
+        raise
 
 
 def save_config(config, filepath=None):
@@ -104,8 +122,12 @@ def save_config(config, filepath=None):
     path = Path(filepath)
     path.parent.mkdir(parents=True, exist_ok=True)
     config_dict = config.model_dump()
-    with open(path, "w", encoding="utf-8") as f:
-        yaml.dump(config_dict, f, default_flow_style=False, sort_keys=False)
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.dump(config_dict, f, default_flow_style=False, sort_keys=False)
+    except OSError as e:
+        logger.error(f"Failed to save configuration to {path}: {e}")
+        raise ConfigSaveError(f"Failed to save configuration to {path}: {e}") from e
     logger.info(f"Configuration saved to: {path}")
     return path
 

@@ -52,3 +52,44 @@ def test_delete_file_returns_raw_path(tmp_path: Path, monkeypatch: pytest.Monkey
 
     assert response.status_code == 200
     assert response.json()["path"] == "to-delete.txt"
+
+
+def test_delete_directory_requires_confirm(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    target_dir = tmp_path / "folder"
+    target_dir.mkdir()
+    (target_dir / "a.txt").write_text("x", encoding="utf-8")
+    client = _build_client(tmp_path, monkeypatch)
+
+    response = client.delete("/api/files/folder")
+
+    assert response.status_code == 400
+    assert target_dir.exists()
+
+
+def test_delete_directory_dry_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    target_dir = tmp_path / "folder"
+    target_dir.mkdir()
+    (target_dir / "a.txt").write_text("x", encoding="utf-8")
+    client = _build_client(tmp_path, monkeypatch)
+
+    response = client.delete("/api/files/folder", params={"dry_run": "true"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "dry_run"
+    assert payload["is_dir"] is True
+    assert payload["count"] >= 1
+    assert target_dir.exists()
+
+
+def test_delete_directory_with_confirm(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    target_dir = tmp_path / "folder"
+    target_dir.mkdir()
+    (target_dir / "a.txt").write_text("x", encoding="utf-8")
+    client = _build_client(tmp_path, monkeypatch)
+
+    response = client.delete("/api/files/folder", params={"confirm": "true"})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "deleted"
+    assert not target_dir.exists()

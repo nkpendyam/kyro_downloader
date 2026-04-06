@@ -1,4 +1,5 @@
 """Download scheduling service."""
+
 from typing import Any
 
 import json
@@ -7,7 +8,9 @@ import threading
 from pathlib import Path
 from datetime import datetime, timedelta
 from src.utils.logger import get_logger
+
 logger = get_logger(__name__)
+
 
 class DownloadScheduler:
     def __init__(self, schedule_file: str | None = None) -> None:
@@ -39,13 +42,27 @@ class DownloadScheduler:
         except IOError as e:
             logger.error(f"Failed to save schedule file: {e}")
 
-    def add_schedule(self, url: str, scheduled_time: str, output_path: str | None = None, only_audio: bool = False, format_id: str | None = None, repeat: str = "none") -> dict[str, Any]:
+    def add_schedule(
+        self,
+        url: str,
+        scheduled_time: str,
+        output_path: str | None = None,
+        only_audio: bool = False,
+        format_id: str | None = None,
+        repeat: str = "none",
+    ) -> dict[str, Any]:
         schedule = {
             "id": f"schedule_{int(time.time())}_{len(self._schedules)}",
-            "url": url, "scheduled_time": scheduled_time, "output_path": output_path,
-            "only_audio": only_audio, "format_id": format_id, "repeat": repeat,
-            "status": "pending", "created_at": datetime.now().isoformat(),
-            "last_run": None, "next_run": scheduled_time
+            "url": url,
+            "scheduled_time": scheduled_time,
+            "output_path": output_path,
+            "only_audio": only_audio,
+            "format_id": format_id,
+            "repeat": repeat,
+            "status": "pending",
+            "created_at": datetime.now().isoformat(),
+            "last_run": None,
+            "next_run": scheduled_time,
         }
         self._schedules.append(schedule)
         self._save()
@@ -87,10 +104,23 @@ class DownloadScheduler:
 
     def _calculate_next_run(self, base_time: str, repeat: str) -> str:
         base = datetime.fromisoformat(base_time)
-        if repeat == "daily": return (base + timedelta(days=1)).isoformat()
-        elif repeat == "weekly": return (base + timedelta(weeks=1)).isoformat()
-        elif repeat == "monthly": return (base + timedelta(days=30)).isoformat()
+        if repeat == "daily":
+            return (base + timedelta(days=1)).isoformat()
+        elif repeat == "weekly":
+            return (base + timedelta(weeks=1)).isoformat()
+        elif repeat == "monthly":
+            return (base + timedelta(days=30)).isoformat()
         return base_time
+
+    def run_due_schedules(self, callback: Any | None = None) -> int:
+        """Run all due schedules once and return execution count."""
+        due = self.get_due_schedules()
+        for schedule in due:
+            logger.info(f"Executing scheduled download: {schedule['url']}")
+            if callback:
+                callback(schedule)
+            self.mark_completed(schedule["id"])
+        return len(due)
 
     def start_scheduler(self, callback: Any | None = None) -> None:
         self._running = True
@@ -102,9 +132,20 @@ class DownloadScheduler:
 
     def _run_loop(self, callback: Any | None = None) -> None:
         while self._running:
-            due = self.get_due_schedules()
-            for schedule in due:
-                logger.info(f"Executing scheduled download: {schedule['url']}")
-                if callback: callback(schedule)
-                self.mark_completed(schedule["id"])
-            time.sleep(60)
+            self.run_due_schedules(callback)
+            now = datetime.now()
+            upcoming = []
+            for schedule in self._schedules:
+                if schedule.get("status") != "pending":
+                    continue
+                try:
+                    target = datetime.fromisoformat(schedule.get("next_run") or schedule["scheduled_time"])
+                except (ValueError, TypeError):
+                    continue
+                if target > now:
+                    upcoming.append((target - now).total_seconds())
+            if upcoming:
+                sleep_seconds = max(1.0, min(upcoming))
+            else:
+                sleep_seconds = 300.0
+            time.sleep(sleep_seconds)

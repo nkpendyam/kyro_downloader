@@ -2,7 +2,15 @@
 
 import os
 import pytest
-from src.config.manager import load_config, save_config, get_default_config_path, deep_merge, find_config_file
+from src.config.manager import (
+    ConfigValidationError,
+    deep_merge,
+    find_config_file,
+    get_default_config_path,
+    load_config,
+    save_config,
+    validate_config,
+)
 from src.config.schema import AppConfig
 from src.config.defaults import DEFAULT_CONFIG
 
@@ -40,6 +48,17 @@ class TestConfigManager:
     def test_load_nonexistent_config_returns_default(self, tmp_path):
         with pytest.raises(FileNotFoundError):
             load_config(str(tmp_path / "nonexistent.yaml"))
+
+    def test_load_invalid_config_raises_validation_error(self, tmp_path):
+        config_file = tmp_path / "invalid_config.yaml"
+        config_file.write_text("download:\n  max_retries: invalid\n")
+
+        with pytest.raises(ConfigValidationError):
+            load_config(str(config_file))
+
+    def test_validate_config_returns_app_config(self):
+        config = validate_config(DEFAULT_CONFIG)
+        assert isinstance(config, AppConfig)
 
     def test_deep_merge(self):
         base = {"a": 1, "b": {"c": 2}}

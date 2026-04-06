@@ -5,6 +5,17 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+QUALITY_HEIGHT_MAP = {
+    "8k": 4320,
+    "4k": 2160,
+    "1080p": 1080,
+    "720p": 720,
+    "480p": 480,
+    "360p": 360,
+    "240p": 240,
+    "144p": 144,
+}
+
 PLATFORM_CONFIG = {
     "youtube.com": {
         "name": "YouTube",
@@ -382,7 +393,8 @@ def get_dolby_audio_formats():
 
 
 def build_quality_preset(quality, hdr=False, dolby=False):
-    qmap = {"8k": 4320, "4k": 2160, "2160p": 2160, "1080p": 1080, "720p": 720, "480p": 480}
+    qmap = dict(QUALITY_HEIGHT_MAP)
+    qmap["2160p"] = QUALITY_HEIGHT_MAP["4k"]
     height = qmap.get(str(quality).lower())
     video_selector = f"bestvideo[height<={height}]" if height else "bestvideo"
     if hdr:

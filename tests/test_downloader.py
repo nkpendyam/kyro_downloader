@@ -1,9 +1,11 @@
 """Tests for core downloader module."""
+
 from unittest.mock import MagicMock, patch
 
 from src.core.downloader import (
     VideoInfo,
     build_smart_audio_options,
+    download_playlist,
     download_single,
     list_video_formats,
     list_audio_formats,
@@ -190,6 +192,22 @@ class TestBuildYdlOpts:
 
 
 class TestDownloadSingle:
+    def test_download_single_returns_written_file_paths(self, tmp_path):
+        target_file = tmp_path / "video.mp4"
+
+        def _download_side_effect(_urls):
+            target_file.write_text("data", encoding="utf-8")
+            return 0
+
+        mock_ydl = MagicMock()
+        mock_ydl.__enter__.return_value.download.side_effect = _download_side_effect
+
+        with patch("src.core.downloader.yt_dlp.YoutubeDL", return_value=mock_ydl):
+            result = download_single(url="https://youtube.com/watch?v=abc123", output_path=str(tmp_path))
+
+        assert str(target_file) in result
+        assert str(tmp_path) not in result
+
     def test_explicit_progress_hook_is_forwarded(self, tmp_path):
         def hook(_data):
             return None
@@ -197,7 +215,7 @@ class TestDownloadSingle:
         mock_ydl = MagicMock()
         mock_ydl.__enter__.return_value.download.return_value = 0
 
-        with patch("src.core.downloader.build_ydl_opts", return_value={} ) as mock_build:
+        with patch("src.core.downloader.build_ydl_opts", return_value={}) as mock_build:
             with patch("src.core.downloader.yt_dlp.YoutubeDL", return_value=mock_ydl):
                 download_single(
                     url="https://youtube.com/watch?v=abc123",
@@ -247,3 +265,21 @@ class TestSmartAudioOptions:
         assert labels[0] == "Smart Best Available (Auto)"
         assert any("Source OPUS 160 kbps" in label for label in labels)
         assert any(label.startswith("Preset 320 kbps") for label in labels)
+
+
+class TestDownloadPlaylist:
+    def test_download_playlist_returns_written_file_paths(self, tmp_path):
+        target_file = tmp_path / "playlist_video.mp4"
+
+        def _download_side_effect(_urls):
+            target_file.write_text("playlist-data", encoding="utf-8")
+            return 0
+
+        mock_ydl = MagicMock()
+        mock_ydl.__enter__.return_value.download.side_effect = _download_side_effect
+
+        with patch("src.core.downloader.yt_dlp.YoutubeDL", return_value=mock_ydl):
+            result = download_playlist(url="https://youtube.com/playlist?list=PL123", output_path=str(tmp_path))
+
+        assert str(target_file) in result
+        assert str(tmp_path) not in result

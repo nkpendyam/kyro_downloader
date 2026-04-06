@@ -1,13 +1,12 @@
 """Configuration validation schema using pydantic."""
 
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional
 
 
 class GeneralConfig(BaseModel):
     output_path: str = "./downloads"
     log_level: str = "INFO"
-    log_file: Optional[str] = "./logs/kyro.log"
+    log_file: str | None = "./logs/kyro.log"
     notifications: bool = True
     auto_update: bool = True
     check_duplicates: bool = True
@@ -27,10 +26,10 @@ class DownloadConfig(BaseModel):
     retry_delay: float = Field(default=2.0, ge=0.1)
     retry_backoff: str = "exponential"
     concurrent_workers: int = Field(default=3, ge=1, le=10)
-    rate_limit: Optional[str] = None
-    proxy: Optional[str] = None
-    cookies_file: Optional[str] = None
-    cookies_from_browser: Optional[str] = None
+    rate_limit: str | None = None
+    proxy: str | None = None
+    cookies_file: str | None = None
+    cookies_from_browser: str | None = None
     timeout: int = Field(default=300, ge=30)
     fragment_retries: int = Field(default=10, ge=0)
     concurrent_fragment_downloads: int = Field(default=4, ge=1)
@@ -62,7 +61,7 @@ class AudioConfig(BaseModel):
 class PlaylistConfig(BaseModel):
     concurrent_downloads: int = Field(default=3, ge=1, le=10)
     sleep_interval: float = Field(default=0, ge=0)
-    max_downloads: Optional[int] = None
+    max_downloads: int | None = None
     autonumber_start: int = Field(default=1, ge=1)
     playlist_reverse: bool = False
     playlist_random: bool = False
@@ -84,10 +83,10 @@ class SponsorBlockConfig(BaseModel):
 
 class CloudConfig(BaseModel):
     enabled: bool = False
-    provider: Optional[str] = None
-    bucket: Optional[str] = None
-    region: Optional[str] = None
-    credentials_file: Optional[str] = None
+    provider: str | None = None
+    bucket: str | None = None
+    region: str | None = None
+    credentials_file: str | None = None
 
 
 class UIConfig(BaseModel):
@@ -103,7 +102,7 @@ class WebConfig(BaseModel):
     port: int = Field(default=8000, ge=1, le=65535)
     debug: bool = False
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
-    api_token: Optional[str] = None
+    api_token: str | None = None
 
 
 class AppConfig(BaseModel):
