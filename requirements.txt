@@ -11,3 +11,4 @@ plyer
 packaging
 mutagen
 python-dotenv
+python-dateutil

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Circuit breaker pattern for resilient service calls."""
 
 import time
