@@ -21,18 +21,18 @@ from src.utils.ytdlp_updater import auto_update_on_startup
 
 class KyroApp(App):
     CSS = """
-    Screen { background: $surface; }
+    Screen { background: $background; color: $foreground; }
     #main-container { layout: vertical; margin: 1 2; }
-    #header-panel { height: 3; background: $primary; color: $text; content-align: center middle; }
+    #header-panel { height: 3; background: $primary; color: $foreground; content-align: center middle; }
     #url-input { width: 100%; margin: 1 0; }
     #mode-select { width: 100%; margin: 1 0; }
     #output-input { width: 100%; margin: 1 0; }
     #action-buttons { height: 3; align: center middle; }
     #action-buttons Button { margin: 0 1; min-width: 15; }
-    #info-panel { height: 10; border: solid $border; margin: 1 0; padding: 0 1; }
-    #progress-panel { height: 5; border: solid $border; margin: 1 0; padding: 0 1; }
-    #queue-panel { height: 15; border: solid $border; margin: 1 0; }
-    #status-bar { height: 3; background: $surface; dock: bottom; content-align: center middle; }
+    #info-panel { height: 10; border: solid $accent; margin: 1 0; padding: 0 1; }
+    #progress-panel { height: 5; border: solid $accent; margin: 1 0; padding: 0 1; }
+    #queue-panel { height: 15; border: solid $accent; margin: 1 0; }
+    #status-bar { height: 3; background: $background; dock: bottom; content-align: center middle; }
     DataTable { height: 100%; }
     """
     BINDINGS = [
@@ -46,7 +46,9 @@ class KyroApp(App):
     def __init__(self):
         super().__init__()
         self.config = load_config()
-        self.manager = DownloadManager(self.config.model_dump())
+        from src.plugins.loader import PluginLoader
+
+        self.manager = DownloadManager(self.config.model_dump(), plugin_loader=PluginLoader())
         self.ui_theme = get_theme(self.config.ui.theme)
         self.presets_manager = PresetsManager()
         self.current_info = None

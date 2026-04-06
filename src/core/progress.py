@@ -1,14 +1,25 @@
 """Progress tracking for downloads."""
 
 import asyncio
-import time
 import threading
+import time
 from dataclasses import dataclass
+from typing import Any
 
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 _dropped_broadcasts = 0
+_MAX_DROPPED_COUNTER = 10000
+
+
+def get_dropped_broadcasts() -> int:
+    """Return and reset the dropped broadcasts counter."""
+    global _dropped_broadcasts
+    count = _dropped_broadcasts
+    _dropped_broadcasts = 0
+    return count
+
 
 try:
     from src.ui.web import websocket as websocket_module
@@ -39,11 +50,11 @@ class ProgressInfo:
     completed_at: float = 0.0
 
     @property
-    def is_complete(self):
+    def is_complete(self) -> bool:
         return self.status in ("finished", "completed", "error")
 
     @property
-    def duration(self):
+    def duration(self) -> float:
         if self.completed_at and self.started_at:
             return self.completed_at - self.started_at
         if self.started_at:
@@ -52,12 +63,32 @@ class ProgressInfo:
 
 
 class ProgressTracker:
-    def __init__(self):
-        self._tasks = {}
-        self._callbacks = []
+    def __init__(self, max_tasks: int = 5000) -> None:
+        self._tasks: dict[str, ProgressInfo] = {}
+        self._task_order: list[str] = []
+        self._callbacks: list[Any] = []
+        self._max_tasks = max(1, int(max_tasks))
         self._lock = threading.Lock()
 
-    def add_task(self, task_id, filename="", total_bytes=0):
+    def _prune_tasks_locked(self) -> None:
+        while len(self._tasks) > self._max_tasks:
+            remove_task_id = None
+            for task_id in self._task_order:
+                task = self._tasks.get(task_id)
+                if task and task.is_complete:
+                    remove_task_id = task_id
+                    break
+            if remove_task_id is None and self._task_order:
+                remove_task_id = self._task_order[0]
+            if remove_task_id is None:
+                break
+            self._tasks.pop(remove_task_id, None)
+            try:
+                self._task_order.remove(remove_task_id)
+            except ValueError:
+                pass
+
+    def add_task(self, task_id: str, filename: str = "", total_bytes: int = 0) -> None:
         with self._lock:
             self._tasks[task_id] = ProgressInfo(
                 filename=filename,
@@ -65,10 +96,15 @@ class ProgressTracker:
                 started_at=time.time(),
                 status="downloading",
             )
+            if task_id in self._task_order:
+                self._task_order.remove(task_id)
+            self._task_order.append(task_id)
+            self._prune_tasks_locked()
 
-    def update(self, task_id, **kwargs):
-        callbacks_to_call = []
-        broadcast_data = None
+    def update(self, task_id: str, **kwargs: Any) -> None:
+        callbacks_to_call: list[Any] = []
+        broadcast_data: dict[str, float | str] | None = None
+        task: ProgressInfo | None = None
         with self._lock:
             if task_id not in self._tasks:
                 return
@@ -102,7 +138,7 @@ class ProgressTracker:
                 loop = websocket_module.get_event_loop()
                 if not loop or not loop.is_running():
                     global _dropped_broadcasts
-                    _dropped_broadcasts += 1
+                    _dropped_broadcasts = (_dropped_broadcasts + 1) % _MAX_DROPPED_COUNTER
                     if _dropped_broadcasts % 100 == 1:
                         logger.debug("Dropping progress broadcast: no active websocket event loop")
                     return
@@ -110,7 +146,7 @@ class ProgressTracker:
             except Exception as e:
                 logger.debug(f"WebSocket broadcast failed: {e}")
 
-    def complete(self, task_id, error=None):
+    def complete(self, task_id: str, error: str | None = None) -> None:
         with self._lock:
             if task_id in self._tasks:
                 task = self._tasks[task_id]
@@ -118,22 +154,26 @@ class ProgressTracker:
                 task.status = "error" if error else "completed"
                 if error:
                     logger.error(f"Task {task_id} failed: {error}")
+                self._prune_tasks_locked()
 
-    def get_task(self, task_id):
-        return self._tasks.get(task_id)
+    def get_task(self, task_id: str) -> ProgressInfo | None:
+        with self._lock:
+            return self._tasks.get(task_id)
 
-    def get_all_tasks(self):
-        return dict(self._tasks)
+    def get_all_tasks(self) -> dict[str, ProgressInfo]:
+        with self._lock:
+            return dict(self._tasks)
 
-    def add_callback(self, callback):
+    def add_callback(self, callback: Any) -> None:
         self._callbacks.append(callback)
 
-    def remove_callback(self, callback):
+    def remove_callback(self, callback: Any) -> None:
         if callback in self._callbacks:
             self._callbacks.remove(callback)
 
-    def get_overall_progress(self):
-        tasks = list(self._tasks.values())
+    def get_overall_progress(self) -> dict[str, int | float]:
+        with self._lock:
+            tasks = list(self._tasks.values())
         if not tasks:
             return {"percentage": 0, "total": 0, "completed": 0, "active": 0}
         total_bytes = sum(t.total_bytes for t in tasks)
@@ -151,8 +191,8 @@ class ProgressTracker:
         }
 
 
-def create_progress_hook(tracker, task_id):
-    def hook(d):
+def create_progress_hook(tracker: ProgressTracker, task_id: str):
+    def hook(d: dict[str, Any]) -> None:
         if d["status"] == "downloading":
             tracker.update(
                 task_id,

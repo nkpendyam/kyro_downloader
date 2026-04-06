@@ -1,21 +1,24 @@
 """Proxy rotation manager."""
 
 import requests
+
 from src.utils.logger import get_logger
+
 logger = get_logger(__name__)
+
 
 class ProxyManager:
     def __init__(self, proxies: list[str] | None = None) -> None:
         self._proxies = proxies or []
         self._current_index = 0
-        self._working = []
+        self._working: list[str] = []
 
     def add_proxy(self, proxy_url: str) -> None:
         self._proxies.append(proxy_url)
 
     def add_proxies_from_file(self, filepath: str) -> None:
         try:
-            with open(filepath, "r") as f:
+            with open(filepath, "r", encoding="utf-8") as f:
                 for line in f:
                     proxy = line.strip()
                     if proxy and not proxy.startswith("#"):

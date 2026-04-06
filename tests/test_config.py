@@ -119,6 +119,10 @@ class TestConfigSchema:
         config = AppConfig()
         assert config.web.cors_origins == DEFAULT_CONFIG["web"]["cors_origins"]
 
+    def test_web_config_rejects_wildcard_cors_with_api_token(self):
+        with pytest.raises(ValueError):
+            AppConfig(web={"cors_origins": ["*"], "api_token": "secret-token"})
+
 
 class TestConfigDefaults:
     def test_default_config_has_required_keys(self):

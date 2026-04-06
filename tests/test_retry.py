@@ -1,4 +1,5 @@
 """Tests for retry mechanism."""
+
 from src.core.retry import retry, retry_network_timeout, retry_on_network_timeout
 
 
@@ -41,6 +42,7 @@ class TestRetry:
             raise RuntimeError("permanent error")
 
         from src.core.retry import RetryExhaustedError
+
         try:
             always_fail()
             assert False, "Should have raised RetryExhaustedError"
@@ -56,12 +58,15 @@ class TestRetry:
             sleep_times.append(delay)
 
         import unittest.mock
+
         with unittest.mock.patch("time.sleep", mock_sleep):
+
             @retry(max_attempts=3, base_delay=0.1, backoff="exponential", retryable_exceptions=(ValueError,))
             def slow_fail():
                 raise ValueError("fail")
 
             from src.core.retry import RetryExhaustedError
+
             try:
                 slow_fail()
             except RetryExhaustedError:
@@ -79,12 +84,15 @@ class TestRetry:
             sleep_times.append(delay)
 
         import unittest.mock
+
         with unittest.mock.patch("time.sleep", mock_sleep):
+
             @retry(max_attempts=3, base_delay=0.1, backoff="linear", retryable_exceptions=(ValueError,))
             def slow_fail():
                 raise ValueError("fail")
 
             from src.core.retry import RetryExhaustedError
+
             try:
                 slow_fail()
             except RetryExhaustedError:
@@ -102,12 +110,15 @@ class TestRetry:
             sleep_times.append(delay)
 
         import unittest.mock
+
         with unittest.mock.patch("time.sleep", mock_sleep):
+
             @retry(max_attempts=3, base_delay=0.1, backoff="fixed", retryable_exceptions=(ValueError,))
             def slow_fail():
                 raise ValueError("fail")
 
             from src.core.retry import RetryExhaustedError
+
             try:
                 slow_fail()
             except RetryExhaustedError:
@@ -128,6 +139,7 @@ class TestRetry:
             raise TimeoutError("network timeout")
 
         from src.core.retry import RetryExhaustedError
+
         try:
             timeout_func()
             assert False, "Should have raised RetryExhaustedError"
@@ -154,6 +166,54 @@ class TestRetry:
         assert result == "ok"
         assert call_count == 3
 
+    def test_file_not_found_is_not_retried(self):
+        call_count = 0
+
+        @retry(max_attempts=4, base_delay=0.01)
+        def missing_file_func():
+            nonlocal call_count
+            call_count += 1
+            raise FileNotFoundError("missing")
+
+        with raises_error(FileNotFoundError):
+            missing_file_func()
+
+        assert call_count == 1
+
+    def test_connection_error_is_retried(self):
+        call_count = 0
+
+        @retry(max_attempts=3, base_delay=0.01, retryable_exceptions=(ConnectionError,))
+        def flaky_connection():
+            nonlocal call_count
+            call_count += 1
+            raise ConnectionError("temporary")
+
+        from src.core.retry import RetryExhaustedError
+
+        with raises_error(RetryExhaustedError):
+            flaky_connection()
+
+        assert call_count == 3
+
+    def test_download_error_is_retried(self):
+        call_count = 0
+
+        import yt_dlp.utils
+
+        @retry(max_attempts=3, base_delay=0.01)
+        def flaky_download():
+            nonlocal call_count
+            call_count += 1
+            raise yt_dlp.utils.DownloadError("video unavailable")
+
+        from src.core.retry import RetryExhaustedError
+
+        with raises_error(RetryExhaustedError):
+            flaky_download()
+
+        assert call_count == 3
+
 
 class raises_error:
     def __init__(self, exc_type):
@@ -163,4 +223,6 @@ class raises_error:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        return exc_type is not None and (exc_val.__class__ is self.exc_type or issubclass(exc_val.__class__, self.exc_type))
+        return exc_type is not None and (
+            exc_val.__class__ is self.exc_type or issubclass(exc_val.__class__, self.exc_type)
+        )

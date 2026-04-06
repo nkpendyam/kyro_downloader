@@ -1,6 +1,6 @@
 """Configuration validation schema using pydantic."""
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class GeneralConfig(BaseModel):
@@ -13,7 +13,7 @@ class GeneralConfig(BaseModel):
 
     @field_validator("log_level")
     @classmethod
-    def validate_log_level(cls, v):
+    def validate_log_level(cls, v: str) -> str:
         allowed = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
         v = v.upper()
         if v not in allowed:
@@ -36,7 +36,7 @@ class DownloadConfig(BaseModel):
 
     @field_validator("retry_backoff")
     @classmethod
-    def validate_backoff(cls, v):
+    def validate_backoff(cls, v: str) -> str:
         if v not in {"exponential", "linear", "fixed"}:
             raise ValueError("retry_backoff must be exponential, linear, or fixed")
         return v
@@ -69,7 +69,7 @@ class PlaylistConfig(BaseModel):
 
 class SubtitleConfig(BaseModel):
     enabled: bool = False
-    languages: list[str] = ["en"]
+    languages: list[str] = Field(default_factory=lambda: ["en"])
     embed: bool = False
     auto_generated: bool = True
     format: str = "srt"
@@ -77,7 +77,7 @@ class SubtitleConfig(BaseModel):
 
 class SponsorBlockConfig(BaseModel):
     enabled: bool = False
-    categories: list[str] = ["sponsor", "intro", "outro", "selfpromo"]
+    categories: list[str] = Field(default_factory=lambda: ["sponsor", "intro", "outro", "selfpromo"])
     api_url: str = "https://sponsor.ajay.app"
 
 
@@ -101,8 +101,22 @@ class WebConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
     debug: bool = False
-    cors_origins: list[str] = Field(default_factory=lambda: ["*"])
+    cors_origins: list[str] = Field(default_factory=lambda: ["http://127.0.0.1:8000", "http://localhost:8000"])
     api_token: str | None = None
+
+    @field_validator("cors_origins")
+    @classmethod
+    def validate_cors_origins(cls, value: list[str]) -> list[str]:
+        cleaned = [origin.strip() for origin in value if origin and origin.strip()]
+        if not cleaned:
+            return ["http://127.0.0.1:8000", "http://localhost:8000"]
+        return cleaned
+
+    @model_validator(mode="after")
+    def validate_token_with_cors(self) -> "WebConfig":
+        if self.api_token and "*" in self.cors_origins:
+            raise ValueError("web.cors_origins cannot include '*' when web.api_token is configured")
+        return self
 
 
 class AppConfig(BaseModel):

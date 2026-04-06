@@ -7,7 +7,7 @@ from typing import Any
 from src.core.downloader import download_single
 from src.core.progress import ProgressTracker
 from src.utils.logger import get_logger
-from src.utils.notifications import notify_download_complete, notify_download_failed
+from src.utils.notifications import notify_download_failed
 
 logger = get_logger(__name__)
 
@@ -24,11 +24,13 @@ class ConcurrentExecutor:
         self._max_workers = max_workers
         self._progress = progress_tracker or ProgressTracker()
         self._on_complete = on_item_complete
-        self._executor = None
-        self._futures = {}
+        self._executor: ThreadPoolExecutor | None = None
+        self._futures: dict[str, Any] = {}
         self._running = False
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
+        self._stopped = threading.Event()
+        self._shutdown = threading.Event()
         self._worker_thread: threading.Thread | None = None
 
     def start(self) -> None:
@@ -36,10 +38,12 @@ class ConcurrentExecutor:
             return
         self._running = True
         self._stop_event.clear()
+        self._stopped.clear()
+        self._shutdown.clear()
         self._executor = ThreadPoolExecutor(max_workers=self._max_workers, thread_name_prefix="kyro-dl-worker")
         logger.info(f"Executor started with {self._max_workers} workers")
         try:
-            futures_to_items = {}
+            futures_to_items: dict[Any, Any] = {}
             while not self._stop_event.is_set() and not self._queue.is_empty:
                 item = self._queue.get_next()
                 if item is None:
@@ -59,10 +63,14 @@ class ConcurrentExecutor:
                     item = futures_to_items[future]
                     logger.error(f"Worker error for {item.task_id}: {e}")
         finally:
-            executor = self._executor
-            if executor is not None:
-                executor.shutdown(wait=True)
-                self._executor = None
+            if not self._shutdown.is_set() and not self._stopped.is_set():
+                executor = self._executor
+                if executor is not None:
+                    try:
+                        executor.shutdown(wait=True)
+                    except RuntimeError:
+                        pass
+                    self._executor = None
             self._running = False
             logger.info("Executor finished processing queue")
 
@@ -71,10 +79,17 @@ class ConcurrentExecutor:
         self._worker_thread.start()
 
     def stop(self) -> None:
+        if self._stopped.is_set():
+            return
+
         self._stop_event.set()
+        self._stopped.set()
         self._running = False
+        self._shutdown.set()
+
+        executor: ThreadPoolExecutor | None = None
         with self._lock:
-            for task_id, future in self._futures.items():
+            for task_id, future in list(self._futures.items()):
                 if not future.done() and not future.running():
                     future.cancel()
                     self._queue.cancel(task_id)
@@ -83,9 +98,15 @@ class ConcurrentExecutor:
                     if item:
                         item.cancel()
                         self._queue.cancel(task_id)
-        if self._executor:
-            self._executor.shutdown(wait=False, cancel_futures=True)
+            executor = self._executor
             self._executor = None
+
+        if executor is not None:
+            try:
+                executor.shutdown(wait=False, cancel_futures=True)
+            except RuntimeError:
+                pass
+
         if hasattr(self, "_worker_thread") and self._worker_thread and self._worker_thread.is_alive():
             self._worker_thread.join(timeout=10)
         logger.info("Executor stopped")
@@ -102,6 +123,7 @@ class ConcurrentExecutor:
                 return
             item.config = dict(item.config)
             item.config["cancel_event"] = item.get_cancel_event()
+            item.config["pause_event"] = item.get_paused_event()
             download_single(
                 url=item.url,
                 output_path=item.output_path,
@@ -113,7 +135,6 @@ class ConcurrentExecutor:
             )
             if not self._stop_event.is_set():
                 self._queue.complete(task_id)
-                notify_download_complete(item.url, item.output_path)
                 if self._on_complete:
                     self._on_complete(task_id, success=True)
                 logger.info(f"Download completed: {item.url}")

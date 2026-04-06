@@ -1,5 +1,13 @@
 """Tests for validation utilities."""
-from src.utils.validation import validate_url, validate_output_path, validate_integer, sanitize_filename, validate_batch_file
+
+from src.utils.validation import (
+    validate_url,
+    validate_output_path,
+    validate_integer,
+    sanitize_filename,
+    validate_batch_file,
+)
+
 
 class TestValidateUrl:
     def test_valid_https_url(self):
@@ -12,7 +20,7 @@ class TestValidateUrl:
         assert validate_url("https://example.com:8080/video") is True
 
     def test_valid_url_with_ip(self):
-        assert validate_url("http://192.168.1.1/video") is True
+        assert validate_url("http://8.8.8.8/video") is True
 
     def test_invalid_url_no_scheme(self):
         assert validate_url("example.com/video") is False
@@ -31,6 +39,24 @@ class TestValidateUrl:
 
     def test_valid_tiktok_url(self):
         assert validate_url("https://www.tiktok.com/@user/video/123") is True
+
+    def test_rejects_private_ipv4(self):
+        assert validate_url("http://10.0.0.1/video") is False
+        assert validate_url("http://192.168.1.1/video") is False
+
+    def test_rejects_loopback_and_link_local_ipv4(self):
+        assert validate_url("http://127.0.0.1/video") is False
+        assert validate_url("http://169.254.169.254/latest/meta-data") is False
+
+    def test_rejects_private_or_loopback_ipv6(self):
+        assert validate_url("http://[::1]/") is False
+        assert validate_url("http://[fd00::1]/") is False
+
+    def test_allows_private_ips_when_env_set(self, monkeypatch):
+        monkeypatch.setenv("KYRO_ALLOW_PRIVATE_IPS", "true")
+        assert validate_url("http://127.0.0.1/video") is True
+        assert validate_url("http://10.0.0.1/video") is True
+        assert validate_url("http://[::1]/") is True
 
 
 class TestValidateOutputPath:
@@ -95,6 +121,7 @@ class TestValidateBatchFile:
 
     def test_missing_file_raises(self, tmp_path):
         import pytest
+
         with pytest.raises(FileNotFoundError):
             validate_batch_file(str(tmp_path / "missing.txt"))
 

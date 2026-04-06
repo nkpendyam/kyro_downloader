@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import pytest
@@ -14,9 +15,26 @@ from fastapi.testclient import TestClient
 from src.ui.web import routes_files
 
 
+def _make_web_state() -> dict:
+    """Create a minimal web_state for file route tests."""
+    return {
+        "manager_lock": threading.Lock(),
+        "manager_instance": None,
+        "config_instance": None,
+        "executor_started": threading.Event(),
+        "rate_limit_lock": threading.Lock(),
+        "rate_limit_state": {},
+        "rate_limit_max_buckets": 10000,
+        "executor": None,
+    }
+
+
 def _build_client(download_dir: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    monkeypatch.setattr(routes_files, "DOWNLOAD_DIR", download_dir.resolve())
+    monkeypatch.setattr(routes_files, "get_download_dir", lambda: download_dir.resolve())
+    monkeypatch.setattr(routes_files, "_check_rate_limit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(routes_files, "require_api_auth", lambda request, **kwargs: None)
     app = FastAPI()
+    app.state.web_state = _make_web_state()
     app.include_router(routes_files.router, prefix="/api/files")
     return TestClient(app)
 
@@ -93,3 +111,26 @@ def test_delete_directory_with_confirm(tmp_path: Path, monkeypatch: pytest.Monke
     assert response.status_code == 200
     assert response.json()["status"] == "deleted"
     assert not target_dir.exists()
+
+
+def test_delete_file_user_identity_cannot_be_spoofed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """User identity in audit logs should derive from auth context, not query params."""
+    target = tmp_path / "to-delete.txt"
+    target.write_text("x", encoding="utf-8")
+    client = _build_client(tmp_path, monkeypatch)
+
+    response = client.delete("/api/files/to-delete.txt", params={"user": "admin"})
+
+    assert response.status_code == 200
+    assert response.json()["path"] == "to-delete.txt"
+
+
+def test_derive_user_identity_uses_only_token_payload() -> None:
+    """Identity hash should not include the auth scheme prefix."""
+
+    class _DummyRequest:
+        headers = {"authorization": "Bearer super-secret-token"}
+
+    identity = routes_files._derive_user_identity(_DummyRequest())
+    assert identity.startswith("token:sha256:")
+    assert "Bearer" not in identity

@@ -31,7 +31,7 @@ class CategoryManager:
     def _load(self) -> dict[str, Any]:
         if self._file.exists():
             try:
-                with open(self._file, "r") as f:
+                with open(self._file, "r", encoding="utf-8") as f:
                     return json.load(f)
             except (json.JSONDecodeError, IOError):
                 pass
@@ -40,8 +40,10 @@ class CategoryManager:
     def _save(self) -> None:
         try:
             self._file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self._file, "w") as f:
+            tmp = self._file.with_suffix(".tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(self._categories, f, indent=2)
+            tmp.replace(self._file)
         except OSError as e:
             logger.warning(f"Failed to save categories: {e}")
 

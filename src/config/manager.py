@@ -2,8 +2,10 @@
 
 import copy
 import os
-import yaml
 from pathlib import Path
+from typing import Any
+
+import yaml
 from dotenv import load_dotenv
 from src.config.defaults import DEFAULT_CONFIG
 from src.config.schema import AppConfig
@@ -22,7 +24,7 @@ class ConfigSaveError(OSError):
     """Raised when configuration cannot be persisted to disk."""
 
 
-def validate_config(config_dict):
+def validate_config(config_dict: dict[str, Any]) -> AppConfig:
     """Validate raw config mapping and return parsed app config."""
     try:
         return AppConfig(**config_dict)
@@ -30,7 +32,7 @@ def validate_config(config_dict):
         raise ConfigValidationError(str(e)) from e
 
 
-def deep_merge(base, override):
+def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     result = base.copy()
     for key, value in override.items():
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):
@@ -40,7 +42,7 @@ def deep_merge(base, override):
     return result
 
 
-def find_config_file():
+def find_config_file() -> Path | None:
     for config_dir in CONFIG_DIRS:
         for ext in ("yaml", "yml"):
             candidate = config_dir / f"config.{ext}"
@@ -49,7 +51,7 @@ def find_config_file():
     return None
 
 
-def load_config_file(filepath):
+def load_config_file(filepath: str | Path) -> dict[str, Any]:
     path = Path(filepath)
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
@@ -58,9 +60,9 @@ def load_config_file(filepath):
     return data if isinstance(data, dict) else {}
 
 
-def load_env_config():
+def load_env_config() -> dict[str, Any]:
     load_dotenv()
-    config = {}
+    config: dict[str, Any] = {}
     prefix = "KYRO_"
     for key, value in os.environ.items():
         if not key.startswith(prefix):
@@ -75,7 +77,7 @@ def load_env_config():
     return config
 
 
-def _parse_env_value(value):
+def _parse_env_value(value: str) -> bool | int | float | str | None:
     if value.lower() in ("true", "yes", "1"):
         return True
     if value.lower() in ("false", "no", "0"):
@@ -93,7 +95,7 @@ def _parse_env_value(value):
     return value
 
 
-def load_config(config_path=None):
+def load_config(config_path: str | Path | None = None) -> AppConfig:
     config = copy.deepcopy(DEFAULT_CONFIG)
     if config_path:
         file_config = load_config_file(config_path)
@@ -116,21 +118,28 @@ def load_config(config_path=None):
         raise
 
 
-def save_config(config, filepath=None):
+def save_config(config: AppConfig, filepath: str | Path | None = None) -> Path:
     if not filepath:
         filepath = Path.home() / ".config" / "kyro" / "config.yaml"
     path = Path(filepath)
     path.parent.mkdir(parents=True, exist_ok=True)
     config_dict = config.model_dump()
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
     try:
-        with open(path, "w", encoding="utf-8") as f:
+        with open(tmp_path, "w", encoding="utf-8") as f:
             yaml.dump(config_dict, f, default_flow_style=False, sort_keys=False)
+        os.replace(tmp_path, path)
     except OSError as e:
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except OSError:
+            pass
         logger.error(f"Failed to save configuration to {path}: {e}")
         raise ConfigSaveError(f"Failed to save configuration to {path}: {e}") from e
     logger.info(f"Configuration saved to: {path}")
     return path
 
 
-def get_default_config_path():
+def get_default_config_path() -> Path:
     return Path.home() / ".config" / "kyro" / "config.yaml"

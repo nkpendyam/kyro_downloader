@@ -13,7 +13,6 @@ from rich.table import Table
 from rich.prompt import Prompt
 
 from src import __version__
-from src.ui.banner import show_banner
 from src.config.manager import load_config, save_config
 from src.config.schema import AppConfig
 from src.core.download_manager import DownloadManager
@@ -26,6 +25,12 @@ from src.services.presets import apply_preset_config
 from src.services.thumbnails import show_thumbnail_inline
 from src.services.sponsorblock import extract_video_id, get_segments, format_segments_for_display
 from src.services.subtitles import get_available_subtitles
+
+
+def _show_banner() -> None:
+    from src.ui.banner import show_banner
+
+    show_banner()
 
 
 def _load_cmd(name):
@@ -228,6 +233,12 @@ def create_parser():
     batch.add_argument("-o", "--output", type=str, help="Output directory")
     batch.add_argument("-w", "--workers", type=int, default=3, help="Concurrent workers")
     batch.add_argument("--mp3", action="store_true", help="Audio-only mode")
+    batch.add_argument("--quality", type=str, help="Quality preset (best, 4k, 1080p, etc.)")
+    batch.add_argument("--hdr", action="store_true", help="Prefer HDR formats")
+    batch.add_argument("--dolby", action="store_true", help="Prefer Dolby audio formats")
+    batch.add_argument("--sponsorblock", action="store_true", help="Enable SponsorBlock")
+    batch.add_argument("--proxy", type=str, help="Proxy URL")
+    batch.add_argument("--cookies", type=str, help="Cookies file path")
     batch.add_argument(
         "--cookies-from-browser",
         type=str,
@@ -246,6 +257,7 @@ def create_parser():
         help="Apply competitor-grade media preset",
     )
     batch.add_argument("--dry-run", action="store_true", help="Show batch queue plan and exit")
+    batch.add_argument("--timeout", type=int, default=3600, help="Max wait time in seconds (default: 3600)")
     info_p = subparsers.add_parser("info", aliases=["i"], help="Show video info")
     info_p.add_argument("url", nargs="?", help="Video URL")
     info_p.add_argument("--subs", action="store_true", help="Show available subtitles")
@@ -303,6 +315,7 @@ def create_parser():
     subparsers.add_parser("health", help="Validate command module availability")
     subparsers.add_parser("tui", help="Launch Textual TUI")
     web_p = subparsers.add_parser("web", help="Launch Web UI")
+    web_p.add_argument("--host", type=str, default="127.0.0.1", help="Web UI host")
     web_p.add_argument("--port", type=int, default=8000, help="Web UI port")
     return parser
 
@@ -523,8 +536,19 @@ def cmd_batch(args, config):
     manager = DownloadManager(config.model_dump())
     cfg = config.model_dump()
     preset = apply_preset_config(cfg, getattr(args, "preset", "none"))
+    if getattr(args, "proxy", None):
+        cfg["proxy"] = args.proxy
+    if getattr(args, "cookies", None):
+        cfg["cookies_file"] = args.cookies
+        cfg["cookies_from_browser"] = None
     if getattr(args, "cookies_from_browser", None):
         cfg["cookies_from_browser"] = args.cookies_from_browser
+    if getattr(args, "sponsorblock", False):
+        cfg["sponsorblock"] = {"enabled": True}
+    if getattr(args, "hdr", False):
+        cfg["hdr"] = True
+    if getattr(args, "dolby", False):
+        cfg["dolby"] = True
     cfg["concurrent_workers"] = args.workers
     subtitles_cfg = _build_subtitles_config(args)
     if subtitles_cfg:
@@ -542,28 +566,52 @@ def cmd_batch(args, config):
         urls,
         output_path=str(output),
         only_audio=effective_only_audio,
+        quality=getattr(args, "quality", None),
+        hdr=bool(getattr(args, "hdr", False)),
+        dolby=bool(getattr(args, "dolby", False)),
         audio_format=manager.config.get("audio_format"),
         audio_quality=manager.config.get("audio_quality"),
         audio_selector=manager.config.get("audio_selector"),
         subtitles=manager.config.get("subtitles"),
+        sponsorblock=manager.config.get("sponsorblock"),
         output_template=manager.config.get("output_template"),
+        proxy=manager.config.get("proxy"),
+        cookies_file=manager.config.get("cookies_file"),
+        cookies_from_browser=manager.config.get("cookies_from_browser"),
     ):
         print(f"  Queued: {item.url} [{item.task_id[:8]}]")
     print(f"\n[bold blue]Starting {len(urls)} downloads with {args.workers} workers...[/bold blue]")
     manager.execute_async()
+    start_time = time.time()
+    max_wait = getattr(args, "timeout", 3600)
+    stuck_threshold = 600
     while True:
+        elapsed = time.time() - start_time
+        if elapsed > max_wait:
+            print(f"\n[bold red]Batch download timed out after {max_wait}s[/bold red]")
+            break
         status = manager.get_status()
         pending = int(status.get("pending", 0))
         active = int(status.get("active", 0))
         failed = int(status.get("failed", 0))
         completed = int(status.get("completed", 0))
         print(
-            f"[dim]Queue status:[/dim] pending={pending} active={active} completed={completed} failed={failed}",
+            f"\r[dim]Queue status:[/dim] pending={pending} active={active} completed={completed} failed={failed} elapsed={int(elapsed)}s",
+            end="",
+            flush=True,
         )
         if pending == 0 and active == 0:
             break
-        time.sleep(0.2)
-    manager.wait_for_completion(timeout=5)
+        for item in manager.queue.get_all_items():
+            if item.status.value == "downloading" and item.started_at > 0:
+                running_time = time.time() - item.started_at
+                if running_time > stuck_threshold:
+                    print(
+                        f"\n[bold yellow]Warning: {item.task_id[:8]} stuck for {int(running_time)}s, cancelling[/bold yellow]"
+                    )
+                    manager.queue.cancel(item.task_id)
+        time.sleep(1)
+    print()
     print("[bold green]Batch download complete![/bold green]")
 
 
@@ -866,11 +914,16 @@ def interactive_mode(config):
                     mp3=False,
                     cookies_from_browser=None,
                     preset="none",
+                    quality=None,
+                    hdr=False,
+                    dolby=False,
+                    sponsorblock=False,
                     subs=False,
                     subs_lang="en",
                     embed_subs=False,
                     subs_format="srt",
                     no_auto_subs=False,
+                    timeout=3600,
                 ),
                 config,
             )
@@ -929,11 +982,11 @@ def main():
         return
     if not args.command:
         if not args.no_banner:
-            show_banner()
+            _show_banner()
         interactive_mode(config)
         return
     if not args.no_banner:
-        show_banner()
+        _show_banner()
     if args.command == "config":
         updated = cmd_config(args, config)
         if isinstance(updated, AppConfig):
@@ -1063,7 +1116,7 @@ def main():
             else "[bold red]Some command modules failed to load[/bold red]"
         ),
         "tui": lambda a, c: _launch_tui(),
-        "web": lambda a, c: _launch_web(getattr(a, "port", 8000)),
+        "web": lambda a, c: _launch_web(getattr(a, "host", "127.0.0.1"), getattr(a, "port", 8000)),
     }
     handler = command_map.get(args.command)
     if handler:

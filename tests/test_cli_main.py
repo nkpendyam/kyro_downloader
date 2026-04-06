@@ -358,7 +358,7 @@ def test_main_verbose_uses_debug_logger(monkeypatch: pytest.MonkeyPatch) -> None
 
     monkeypatch.setattr("sys.argv", ["kyro", "--verbose", "--no-banner", "platforms"])
     monkeypatch.setattr("src.cli.__main__.load_config", lambda _p=None: _Cfg())
-    monkeypatch.setattr("src.cli.__main__.show_banner", lambda: None)
+    monkeypatch.setattr("src.cli.__main__._show_banner", lambda: None)
     monkeypatch.setattr(
         "src.cli.__main__.setup_logger", lambda log_level, log_file=None: setup_calls.append((log_level, log_file))
     )
@@ -368,3 +368,36 @@ def test_main_verbose_uses_debug_logger(monkeypatch: pytest.MonkeyPatch) -> None
 
     assert setup_calls
     assert setup_calls[0][0] == "DEBUG"
+
+
+def test_create_parser_web_host_flag() -> None:
+    parser = cli_main.create_parser()
+    args = parser.parse_args(["web", "--host", "0.0.0.0", "--port", "8123"])
+
+    assert args.command == "web"
+    assert args.host == "0.0.0.0"
+    assert args.port == 8123
+
+
+def test_batch_subcommand_includes_advanced_flags() -> None:
+    parser = cli_main.create_parser()
+    args = parser.parse_args(
+        [
+            "batch",
+            "urls.txt",
+            "--quality",
+            "4k",
+            "--hdr",
+            "--dolby",
+            "--sponsorblock",
+            "--timeout",
+            "600",
+        ]
+    )
+
+    assert args.command == "batch"
+    assert args.quality == "4k"
+    assert args.hdr is True
+    assert args.dolby is True
+    assert args.sponsorblock is True
+    assert args.timeout == 600

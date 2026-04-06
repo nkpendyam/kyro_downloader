@@ -194,26 +194,27 @@ class TestBuildYdlOpts:
 class TestDownloadSingle:
     def test_download_single_returns_written_file_paths(self, tmp_path):
         target_file = tmp_path / "video.mp4"
+        target_file.write_text("data", encoding="utf-8")
 
-        def _download_side_effect(_urls):
-            target_file.write_text("data", encoding="utf-8")
-            return 0
+        result_payload = {
+            "filepath": str(target_file),
+        }
 
         mock_ydl = MagicMock()
-        mock_ydl.__enter__.return_value.download.side_effect = _download_side_effect
+        mock_ydl.__enter__.return_value.extract_info.return_value = result_payload
 
         with patch("src.core.downloader.yt_dlp.YoutubeDL", return_value=mock_ydl):
-            result = download_single(url="https://youtube.com/watch?v=abc123", output_path=str(tmp_path))
+            result = download_playlist(url="https://youtube.com/playlist?list=PL123", output_path=str(tmp_path))
 
-        assert str(target_file) in result
-        assert str(tmp_path) not in result
+        assert str(target_file) in result.completed_files
+        assert str(tmp_path) not in result.completed_files
 
     def test_explicit_progress_hook_is_forwarded(self, tmp_path):
         def hook(_data):
             return None
 
         mock_ydl = MagicMock()
-        mock_ydl.__enter__.return_value.download.return_value = 0
+        mock_ydl.__enter__.return_value.extract_info.return_value = {}
 
         with patch("src.core.downloader.build_ydl_opts", return_value={}) as mock_build:
             with patch("src.core.downloader.yt_dlp.YoutubeDL", return_value=mock_ydl):
@@ -225,23 +226,21 @@ class TestDownloadSingle:
 
         assert mock_build.call_args.kwargs["progress_hook"] is hook
 
-    def test_windows_download_single_does_not_set_sleep_interval_subtitles(self, tmp_path):
+    def test_download_single_no_unconditional_sleep(self, tmp_path):
         mock_ydl = MagicMock()
-        mock_ydl.__enter__.return_value.download.return_value = 0
+        mock_ydl.__enter__.return_value.extract_info.return_value = {}
         captured_opts = {}
 
         def _ydl_factory(opts):
             captured_opts.update(opts)
             return mock_ydl
 
-        with patch("src.core.downloader.platform.system", return_value="Windows"):
-            with patch("src.core.downloader.time.sleep", return_value=None):
-                with patch("src.core.downloader.build_ydl_opts", return_value={}):
-                    with patch("src.core.downloader.yt_dlp.YoutubeDL", side_effect=_ydl_factory):
-                        download_single(
-                            url="https://youtube.com/watch?v=abc123",
-                            output_path=str(tmp_path),
-                        )
+        with patch("src.core.downloader.build_ydl_opts", return_value={}):
+            with patch("src.core.downloader.yt_dlp.YoutubeDL", side_effect=_ydl_factory):
+                download_single(
+                    url="https://youtube.com/watch?v=abc123",
+                    output_path=str(tmp_path),
+                )
 
         assert "sleep_interval_subtitles" not in captured_opts
 
@@ -270,16 +269,112 @@ class TestSmartAudioOptions:
 class TestDownloadPlaylist:
     def test_download_playlist_returns_written_file_paths(self, tmp_path):
         target_file = tmp_path / "playlist_video.mp4"
+        target_file.write_text("playlist-data", encoding="utf-8")
 
-        def _download_side_effect(_urls):
-            target_file.write_text("playlist-data", encoding="utf-8")
-            return 0
+        result_payload = {
+            "entries": [
+                {
+                    "filepath": str(target_file),
+                }
+            ]
+        }
 
         mock_ydl = MagicMock()
-        mock_ydl.__enter__.return_value.download.side_effect = _download_side_effect
+        mock_ydl.__enter__.return_value.extract_info.return_value = result_payload
 
         with patch("src.core.downloader.yt_dlp.YoutubeDL", return_value=mock_ydl):
             result = download_playlist(url="https://youtube.com/playlist?list=PL123", output_path=str(tmp_path))
 
-        assert str(target_file) in result
-        assert str(tmp_path) not in result
+        assert str(target_file) in result.completed_files
+        assert str(tmp_path) not in result.completed_files
+
+    def test_download_playlist_does_not_false_positive_failed_urls_for_requested_downloads(self, tmp_path):
+        target_file = tmp_path / "written.mp4"
+        target_file.write_text("video", encoding="utf-8")
+
+        result_payload = {
+            "entries": [
+                {
+                    "url": "https://example.com/video",
+                    "title": "Entry 1",
+                    "requested_downloads": [{"filepath": str(target_file)}],
+                }
+            ]
+        }
+
+        mock_ydl = MagicMock()
+        mock_ydl.__enter__.return_value.extract_info.return_value = result_payload
+
+        with patch("src.core.downloader.yt_dlp.YoutubeDL", return_value=mock_ydl):
+            result = download_playlist(url="https://youtube.com/playlist?list=PL123", output_path=str(tmp_path))
+
+        assert result.completed_count == 1
+        assert result.failed_urls == []
+
+    def test_download_playlist_reports_progress_with_progress_tracker(self, tmp_path):
+        events = []
+
+        class FakeTracker:
+            def add_task(self, task_id, filename="", total_bytes=0):
+                events.append(("add", task_id, filename, total_bytes))
+
+            def update(self, task_id, **kwargs):
+                events.append(("update", task_id, kwargs))
+
+            def complete(self, task_id, error=None):
+                events.append(("complete", task_id, error))
+
+        class FakeYdl:
+            def __init__(self, opts):
+                self.opts = opts
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                return False
+
+            def extract_info(self, _url, download=True):
+                hook = self.opts["progress_hooks"][0]
+                hook(
+                    {
+                        "status": "downloading",
+                        "downloaded_bytes": 50,
+                        "total_bytes": 100,
+                        "_percent_str": "50.0%",
+                        "info_dict": {
+                            "playlist_index": 1,
+                            "n_entries": 2,
+                            "title": "Episode 1",
+                        },
+                    }
+                )
+                hook(
+                    {
+                        "status": "finished",
+                        "info_dict": {
+                            "playlist_index": 1,
+                            "n_entries": 2,
+                            "title": "Episode 1",
+                        },
+                    }
+                )
+                return {
+                    "entries": [
+                        {
+                            "filepath": str(tmp_path / "episode-1.mp4"),
+                            "title": "Episode 1",
+                        }
+                    ]
+                }
+
+        with patch("src.core.downloader.yt_dlp.YoutubeDL", side_effect=lambda opts: FakeYdl(opts)):
+            download_playlist(
+                url="https://youtube.com/playlist?list=PL123",
+                output_path=str(tmp_path),
+                progress_tracker=FakeTracker(),
+            )
+
+        assert any(event[0] == "add" for event in events)
+        assert any(event[0] == "update" for event in events)
+        assert any(event[0] == "complete" for event in events)

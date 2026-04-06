@@ -53,5 +53,11 @@ DEFAULT_CONFIG = {
         "show_format_table": True,
         "progress_bar": "rich",
     },
-    "web": {"host": "127.0.0.1", "port": 8000, "debug": False, "cors_origins": ["*"], "api_token": None},
+    "web": {
+        "host": "127.0.0.1",
+        "port": 8000,
+        "debug": False,
+        "cors_origins": ["http://127.0.0.1:8000", "http://localhost:8000"],
+        "api_token": None,
+    },
 }

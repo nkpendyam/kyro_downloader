@@ -1,10 +1,28 @@
 """Cloud upload service for S3 and Google Drive."""
+
 from typing import Any
 
 import os
 from pathlib import Path
 from src.utils.logger import get_logger
+
 logger = get_logger(__name__)
+
+
+def _gdrive_service_credentials_from_env() -> Any | None:
+    """Create service-account credentials for headless Google Drive uploads."""
+    service_account_file = os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE")
+    if not service_account_file:
+        return None
+    try:
+        from google.oauth2 import service_account
+
+        scopes = ["https://www.googleapis.com/auth/drive.file"]
+        return service_account.Credentials.from_service_account_file(service_account_file, scopes=scopes)
+    except Exception as e:
+        logger.error(f"Failed to load service account credentials: {e}")
+        return None
+
 
 def upload_to_s3(filepath: str | Path, bucket: str, key: str | None = None, region: str = "us-east-1") -> bool:
     try:
@@ -26,6 +44,7 @@ def upload_to_s3(filepath: str | Path, bucket: str, key: str | None = None, regi
         logger.error(f"S3 upload failed: {e}")
         return False
 
+
 def upload_to_gdrive(filepath: str | Path, folder_id: str | None = None, headless: bool = False) -> bool:
     try:
         from googleapiclient.discovery import build
@@ -42,16 +61,26 @@ def upload_to_gdrive(filepath: str | Path, folder_id: str | None = None, headles
         if not os.path.exists(creds_file):
             logger.error(f"Google credentials not found: {creds_file}")
             return False
-        from google_auth_oauthlib.flow import InstalledAppFlow
-        flow = InstalledAppFlow.from_client_secrets_file(creds_file, scopes=["https://www.googleapis.com/auth/drive.file"])
-        if headless:
-            auth_url, _ = flow.authorization_url(prompt="consent")
-            logger.info(f"Visit this URL to authorize: {auth_url}")
-            code = input("Enter the authorization code: ")
-            flow.fetch_token(code=code)
-            creds = flow.credentials
-        else:
-            creds = flow.run_local_server(port=0)
+        creds = _gdrive_service_credentials_from_env() if headless else None
+        if creds is None:
+            from google_auth_oauthlib.flow import InstalledAppFlow
+
+            flow = InstalledAppFlow.from_client_secrets_file(
+                creds_file,
+                scopes=["https://www.googleapis.com/auth/drive.file"],
+            )
+            if headless:
+                auth_url, _ = flow.authorization_url(prompt="consent")
+                logger.info(f"Visit this URL to authorize: {auth_url}")
+                code = input("Enter the authorization code: ")
+                flow.fetch_token(code=code)
+                creds = flow.credentials
+            else:
+                try:
+                    creds = flow.run_local_server(port=8090)
+                except OSError:
+                    logger.warning("Port 8090 unavailable for OAuth callback, falling back to random local port")
+                    creds = flow.run_local_server(port=0)
         service = build("drive", "v3", credentials=creds)
         file_metadata = {"name": path.name}
         if folder_id:
@@ -63,6 +92,7 @@ def upload_to_gdrive(filepath: str | Path, folder_id: str | None = None, headles
     except Exception as e:
         logger.error(f"Google Drive upload failed: {e}")
         return False
+
 
 def upload_file(filepath: str | Path, provider: str, **kwargs: Any) -> bool:
     if provider == "s3":

@@ -187,9 +187,12 @@ def apply_preset_config(config: dict[str, Any], preset_name: str | None) -> dict
 class PresetsManager:
     """Persist and expose user-editable download presets."""
 
-    def __init__(self, state_dir: str = ".kyro_state") -> None:
+    def __init__(self, state_dir: str | None = None) -> None:
+        """Initialize presets manager with absolute state directory."""
+        if state_dir is None:
+            state_dir = str(Path.home() / ".kyro" / "presets")
         self.state_dir = Path(state_dir)
-        self.state_dir.mkdir(exist_ok=True)
+        self.state_dir.mkdir(parents=True, exist_ok=True)
         self.presets_file = self.state_dir / "presets.json"
         self._presets: dict[str, dict[str, Any]] = {}
         self._load_presets()

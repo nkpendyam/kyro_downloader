@@ -1,10 +1,14 @@
 """Auto-updater for Kyro Downloader using GitHub Releases."""
+
+import hashlib
 import os
-import sys
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
+
 from packaging import version
+
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -13,16 +17,18 @@ GITHUB_API = "https://api.github.com/repos/nkpendyam/kyro_downloader"
 CURRENT_VERSION = "1.0.0"
 
 
-def get_current_version():
+def get_current_version() -> str:
     try:
         from src import __version__
+
         return __version__
     except ImportError:
         return CURRENT_VERSION
 
 
-def get_latest_release():
+def get_latest_release() -> dict[str, object] | None:
     import requests
+
     try:
         resp = requests.get(f"{GITHUB_API}/releases/latest", timeout=10)
         if resp.status_code == 200:
@@ -33,7 +39,12 @@ def get_latest_release():
                 "body": data["body"],
                 "html_url": data["html_url"],
                 "assets": [
-                    {"name": a["name"], "url": a["browser_download_url"], "size": a["size"]}
+                    {
+                        "name": a["name"],
+                        "url": a["browser_download_url"],
+                        "size": a["size"],
+                        "digest": a.get("digest"),
+                    }
                     for a in data.get("assets", [])
                 ],
             }
@@ -42,7 +53,7 @@ def get_latest_release():
     return None
 
 
-def check_for_update():
+def check_for_update() -> dict[str, object]:
     current = get_current_version()
     latest = get_latest_release()
     if not latest:
@@ -63,7 +74,7 @@ def check_for_update():
     }
 
 
-def get_platform_asset(assets):
+def get_platform_asset(assets: list[dict[str, object]]) -> dict[str, object] | None:
     """Find the right download asset for the current platform."""
     platform = sys.platform
     if platform == "win32":
@@ -81,9 +92,29 @@ def get_platform_asset(assets):
     return None
 
 
-def download_and_update(asset_url):
+def _sha256_file(path: Path) -> str:
+    """Compute SHA-256 hash for a file path."""
+    hasher = hashlib.sha256()
+    with open(path, "rb") as file_handle:
+        for chunk in iter(lambda: file_handle.read(8192), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def _extract_sha256(digest: str | None) -> str | None:
+    """Extract hex sha256 from GitHub digest metadata."""
+    if not digest:
+        return None
+    prefix = "sha256:"
+    if digest.startswith(prefix):
+        return digest[len(prefix) :]
+    return None
+
+
+def download_and_update(asset_url: str, expected_sha256: str | None = None) -> str | None:
     """Download the latest release and launch the installer."""
     import requests
+
     try:
         resp = requests.get(asset_url, stream=True, timeout=300)
         resp.raise_for_status()
@@ -92,6 +123,15 @@ def download_and_update(asset_url):
         with open(tmp_path, "wb") as f:
             for chunk in resp.iter_content(chunk_size=8192):
                 f.write(chunk)
+        if not expected_sha256:
+            logger.warning("No checksum metadata available; refusing auto-update")
+            tmp_path.unlink(missing_ok=True)
+            return None
+        file_sha256 = _sha256_file(tmp_path)
+        if file_sha256.lower() != expected_sha256.lower():
+            logger.error("Checksum verification failed for downloaded update")
+            tmp_path.unlink(missing_ok=True)
+            return None
         logger.info(f"Downloaded update to {tmp_path}")
         return str(tmp_path)
     except Exception as e:
@@ -99,7 +139,7 @@ def download_and_update(asset_url):
         return None
 
 
-def launch_installer(installer_path):
+def launch_installer(installer_path: str) -> bool:
     """Launch the downloaded installer."""
     platform = sys.platform
     try:
@@ -116,7 +156,7 @@ def launch_installer(installer_path):
         return False
 
 
-def auto_update():
+def auto_update() -> bool:
     """Full auto-update flow: check, download, install."""
     status = check_for_update()
     if not status["update_available"]:
@@ -127,7 +167,7 @@ def auto_update():
     if not asset:
         logger.warning("No suitable update asset found for this platform")
         return False
-    installer_path = download_and_update(asset["url"])
+    installer_path = download_and_update(asset["url"], expected_sha256=_extract_sha256(asset.get("digest")))
     if not installer_path:
         return False
     return launch_installer(installer_path)

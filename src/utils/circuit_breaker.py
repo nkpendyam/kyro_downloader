@@ -1,8 +1,10 @@
 """Circuit breaker pattern for resilient service calls."""
+
 import time
 import threading
 from enum import Enum
-from typing import Callable, Any
+from typing import Any, Callable
+
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -15,7 +17,7 @@ class CircuitState(Enum):
 
 
 class CircuitBreakerError(Exception):
-    pass
+    """Raised when a circuit breaker blocks a call."""
 
 
 class CircuitBreaker:
@@ -25,7 +27,7 @@ class CircuitBreaker:
         failure_threshold: int = 5,
         recovery_timeout: float = 60.0,
         half_open_max_calls: int = 1,
-    ):
+    ) -> None:
         self.name = name
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
@@ -48,19 +50,15 @@ class CircuitBreaker:
                     logger.info(f"Circuit '{self.name}' transitioning to HALF_OPEN")
             return self._state
 
-    def call(self, func: Callable, *args, **kwargs) -> Any:
+    def call(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         state = self.state
         if state == CircuitState.OPEN:
-            raise CircuitBreakerError(
-                f"Circuit '{self.name}' is OPEN. Service unavailable."
-            )
+            raise CircuitBreakerError(f"Circuit '{self.name}' is OPEN. Service unavailable.")
 
         if state == CircuitState.HALF_OPEN:
             with self._lock:
                 if self._half_open_calls >= self.half_open_max_calls:
-                    raise CircuitBreakerError(
-                        f"Circuit '{self.name}' is HALF_OPEN with max calls reached."
-                    )
+                    raise CircuitBreakerError(f"Circuit '{self.name}' is HALF_OPEN with max calls reached.")
                 self._half_open_calls += 1
 
         try:
@@ -71,7 +69,7 @@ class CircuitBreaker:
             self._on_failure()
             raise
 
-    def _on_success(self):
+    def _on_success(self) -> None:
         with self._lock:
             if self._state == CircuitState.HALF_OPEN:
                 self._success_count += 1
@@ -83,23 +81,19 @@ class CircuitBreaker:
             else:
                 self._failure_count = max(0, self._failure_count - 1)
 
-    def _on_failure(self):
+    def _on_failure(self) -> None:
         with self._lock:
             self._failure_count += 1
             self._last_failure_time = time.time()
             if self._state == CircuitState.HALF_OPEN:
                 self._state = CircuitState.OPEN
                 self._success_count = 0
-                logger.warning(
-                    f"Circuit '{self.name}' OPEN after failure in HALF_OPEN state"
-                )
+                logger.warning(f"Circuit '{self.name}' OPEN after failure in HALF_OPEN state")
             elif self._failure_count >= self.failure_threshold:
                 self._state = CircuitState.OPEN
-                logger.warning(
-                    f"Circuit '{self.name}' OPEN after {self._failure_count} failures"
-                )
+                logger.warning(f"Circuit '{self.name}' OPEN after {self._failure_count} failures")
 
-    def reset(self):
+    def reset(self) -> None:
         with self._lock:
             self._state = CircuitState.CLOSED
             self._failure_count = 0
@@ -108,7 +102,7 @@ class CircuitBreaker:
             self._half_open_calls = 0
             logger.info(f"Circuit '{self.name}' manually reset to CLOSED")
 
-    def get_status(self) -> dict:
+    def get_status(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "state": self.state.value,
@@ -121,10 +115,10 @@ class CircuitBreaker:
 
 
 class CircuitBreakerRegistry:
-    _instance = None
+    _instance: "CircuitBreakerRegistry" | None = None
     _lock = threading.Lock()
 
-    def __new__(cls):
+    def __new__(cls) -> "CircuitBreakerRegistry":
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -137,9 +131,9 @@ class CircuitBreakerRegistry:
             self._breakers[name] = CircuitBreaker(name, **kwargs)
         return self._breakers[name]
 
-    def get_all_status(self) -> dict:
+    def get_all_status(self) -> dict[str, dict[str, Any]]:
         return {name: breaker.get_status() for name, breaker in self._breakers.items()}
 
-    def reset_all(self):
+    def reset_all(self) -> None:
         for breaker in self._breakers.values():
             breaker.reset()

@@ -5,12 +5,14 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
-from fastapi import APIRouter, HTTPException, Header, Depends
+
+from fastapi import APIRouter, HTTPException, Header, Depends, Request
 from pydantic import BaseModel, Field, field_validator
 
 from src.config.manager import load_config
 from src.config.schema import AppConfig
 from src.core.download_manager import DownloadManager
+from src.plugins.loader import PluginLoader
 from src.core.queue import Priority
 from src.core.downloader import get_video_info, list_video_formats
 from src.services.presets import PRESET_PROFILES
@@ -20,21 +22,38 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter()
-_manager_lock = threading.Lock()
-_manager_instance = None
-_config_instance = None
-_executor_started = threading.Event()
-_rate_limit_lock = threading.Lock()
-_rate_limit_state: dict[str, list[float]] = {}
-_executor: concurrent.futures.ThreadPoolExecutor | None = None
 
-# Sensitive config fields to redact from API responses
 _SENSITIVE_FIELDS = {"proxy", "cookies_file", "credentials_file", "token", "api_token", "password", "secret"}
 
 
-def _redact_config(config_dict):
+def init_web_state() -> dict[str, Any]:
+    """Create app-scoped mutable state for web routes."""
+    return {
+        "manager_lock": threading.RLock(),
+        "manager_instance": None,
+        "config_instance": None,
+        "executor_started": threading.Event(),
+        "rate_limit_lock": threading.RLock(),
+        "rate_limit_state": {},
+        "rate_limit_max_buckets": 10000,
+        "executor": None,
+    }
+
+
+def _get_web_state(request: Request) -> dict[str, Any]:
+    """Return app-scoped web state or raise 503."""
+    app_state = getattr(request.app, "state", None)
+    if app_state is None:
+        raise HTTPException(status_code=503, detail="Service initializing")
+    state = getattr(app_state, "web_state", None)
+    if state is None:
+        raise HTTPException(status_code=503, detail="Service initializing")
+    return state
+
+
+def _redact_config(config_dict: dict[str, Any]) -> dict[str, Any]:
     """Remove sensitive fields from config before returning via API."""
-    redacted = {}
+    redacted: dict[str, Any] = {}
     for section, values in config_dict.items():
         redacted[section] = {}
         for key, value in values.items():
@@ -45,7 +64,7 @@ def _redact_config(config_dict):
     return redacted
 
 
-def _safe_output_path(path, base_path):
+def _safe_output_path(path: str, base_path: str) -> Path:
     """Validate output path stays within allowed directory."""
     resolved = Path(path).resolve()
     base = Path(base_path).resolve()
@@ -56,86 +75,119 @@ def _safe_output_path(path, base_path):
     return resolved
 
 
-def _check_rate_limit(bucket: str, limit: int, window_seconds: int = 60) -> None:
+def _check_rate_limit(
+    bucket: str,
+    limit: int,
+    window_seconds: int = 60,
+    state: dict[str, Any] | None = None,
+) -> None:
+    """Enforce per-bucket rate limiting with bounded state."""
+    if state is None:
+        raise HTTPException(status_code=503, detail="Service initializing")
     now = time.time()
-    with _rate_limit_lock:
+    rate_limit_lock = state["rate_limit_lock"]
+    rate_limit_state = state["rate_limit_state"]
+    max_buckets = int(state["rate_limit_max_buckets"])
+    with rate_limit_lock:
         stale_cutoff = now - window_seconds
-        stale_buckets = []
-        for bucket_name, entries in _rate_limit_state.items():
+        stale_buckets: list[str] = []
+        for bucket_name, entries in rate_limit_state.items():
             kept = [entry for entry in entries if entry >= stale_cutoff]
             if kept:
-                _rate_limit_state[bucket_name] = kept
+                rate_limit_state[bucket_name] = kept
             else:
                 stale_buckets.append(bucket_name)
         for bucket_name in stale_buckets:
-            _rate_limit_state.pop(bucket_name, None)
+            rate_limit_state.pop(bucket_name, None)
 
-        timestamps = _rate_limit_state.get(bucket, [])
+        timestamps = rate_limit_state.get(bucket, [])
         timestamps = [t for t in timestamps if now - t < window_seconds]
-        if len(timestamps) >= limit:
+        timestamps.append(now)
+        rate_limit_state[bucket] = timestamps
+
+        if len(rate_limit_state) > max_buckets:
+            oldest_bucket = min(
+                rate_limit_state,
+                key=lambda bn: rate_limit_state[bn][-1] if rate_limit_state[bn] else now,
+            )
+            if oldest_bucket != bucket:
+                rate_limit_state.pop(oldest_bucket, None)
+
+        if len(timestamps) > limit:
             retry_after = max(1, int(window_seconds - (now - timestamps[0])))
             raise HTTPException(
                 status_code=429,
                 detail="Too Many Requests",
                 headers={"Retry-After": str(retry_after)},
             )
-        timestamps.append(now)
-        _rate_limit_state[bucket] = timestamps
 
 
-def get_executor() -> concurrent.futures.ThreadPoolExecutor:
-    global _executor
-    if _executor is None:
-        with _manager_lock:
-            if _executor is None:
-                _executor = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="kyro-web")
-    return _executor
+def get_executor(state: dict[str, Any]) -> concurrent.futures.ThreadPoolExecutor:
+    """Return the app-scoped thread pool executor."""
+    if state["executor"] is None:
+        with state["manager_lock"]:
+            if state["executor"] is None:
+                state["executor"] = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="kyro-web")
+    return state["executor"]
 
 
-def shutdown_executor() -> None:
-    global _executor
-    with _manager_lock:
-        if _executor is not None:
-            _executor.shutdown(wait=False, cancel_futures=True)
-            _executor = None
-            _executor_started.clear()
+def shutdown_executor(state: dict[str, Any] | None = None) -> None:
+    """Shut down the app-scoped executor."""
+    if state is None:
+        return
+    with state["manager_lock"]:
+        if state["executor"] is not None:
+            state["executor"].shutdown(wait=False, cancel_futures=True)
+            state["executor"] = None
+            state["executor_started"].clear()
 
 
-def get_manager():
-    global _manager_instance, _config_instance
-    if _manager_instance is None:
-        with _manager_lock:
-            if _manager_instance is None:
-                _config_instance = load_config()
-                _manager_instance = DownloadManager(_config_instance.model_dump())
-    return _manager_instance
+def get_manager(state: dict[str, Any]) -> DownloadManager:
+    """Return the app-scoped download manager."""
+    if state["manager_instance"] is None:
+        with state["manager_lock"]:
+            if state["manager_instance"] is None:
+                state["config_instance"] = load_config()
+                state["manager_instance"] = DownloadManager(
+                    state["config_instance"].model_dump(),
+                    plugin_loader=PluginLoader(),
+                )
+    return state["manager_instance"]
 
 
-def get_config():
-    global _config_instance, _manager_instance
-    with _manager_lock:
-        if _config_instance is None:
-            _config_instance = load_config()
-            if _manager_instance is None:
-                _manager_instance = DownloadManager(_config_instance.model_dump())
-    return _config_instance
+def get_config(state: dict[str, Any]) -> AppConfig:
+    """Return the app-scoped configuration."""
+    with state["manager_lock"]:
+        if state["config_instance"] is None:
+            state["config_instance"] = load_config()
+            if state["manager_instance"] is None:
+                state["manager_instance"] = DownloadManager(state["config_instance"].model_dump())
+    return state["config_instance"]
 
 
-def _get_configured_api_token():
-    cfg = get_config()
+def _get_configured_api_token(state: dict[str, Any]) -> str | None:
+    """Return configured API token if set."""
+    cfg = get_config(state)
     web_cfg = getattr(cfg, "web", None)
     return getattr(web_cfg, "api_token", None) if web_cfg else None
 
 
 async def require_api_auth(
+    request: Request,
     authorization: str | None = Header(default=None),
     x_api_token: str | None = Header(default=None, alias="X-API-Token"),
 ):
     """Require bearer or X-API-Token when web.api_token is configured."""
-    configured_token = _get_configured_api_token()
+    app_state = getattr(request.app, "state", None)
+    if app_state is None:
+        return
+    state = getattr(app_state, "web_state", None)
+    if state is None:
+        return
+    configured_token = _get_configured_api_token(state)
     if not configured_token:
         return
-    supplied_token = None
+    supplied_token: str | None = None
     if authorization and authorization.lower().startswith("bearer "):
         supplied_token = authorization[7:].strip()
     elif x_api_token:
@@ -144,13 +196,14 @@ async def require_api_auth(
         raise HTTPException(status_code=401, detail="Unauthorized", headers={"WWW-Authenticate": "Bearer"})
 
 
-def _ensure_executor_running():
-    if not _executor_started.is_set():
-        with _manager_lock:
-            if not _executor_started.is_set():
-                manager = get_manager()
-                get_executor().submit(manager.execute)
-                _executor_started.set()
+def _ensure_executor_running(state: dict[str, Any]) -> None:
+    """Start the executor thread if not already running."""
+    if not state["executor_started"].is_set():
+        with state["manager_lock"]:
+            if not state["executor_started"].is_set():
+                manager = get_manager(state)
+                get_executor(state).submit(manager.execute)
+                state["executor_started"].set()
 
 
 class DownloadRequest(BaseModel):
@@ -287,13 +340,15 @@ class ConfigUpdate(BaseModel):
 
 
 @router.post("/download")
-async def queue_download(req: DownloadRequest):
-    _check_rate_limit("api_download", limit=30)
+async def queue_download(req: DownloadRequest, request: Request):
+    """Queue a single download request."""
+    state = _get_web_state(request)
+    _check_rate_limit("api_download", limit=30, state=state)
     url = normalize_url(req.url)
     if not validate_url(url):
         raise HTTPException(status_code=400, detail="Invalid URL")
-    manager = get_manager()
-    cfg = get_config()
+    manager = get_manager(state)
+    cfg = get_config(state)
     output_base = cfg.general.output_path
     output = validate_output_path(req.output_path or output_base)
     _safe_output_path(output, output_base)
@@ -305,7 +360,7 @@ async def queue_download(req: DownloadRequest):
     }
     priority = priority_map.get(req.priority, Priority.NORMAL)
     profile = _resolve_download_profile(req)
-    sponsorblock_cfg = {"enabled": True} if req.sponsorblock else None
+    sponsorblock_cfg: dict[str, Any] | None = {"enabled": True} if req.sponsorblock else None
     item = manager.queue_download(
         url=url,
         output_path=str(output),
@@ -322,7 +377,7 @@ async def queue_download(req: DownloadRequest):
         sponsorblock=sponsorblock_cfg,
         output_template=profile["output_template"],
     )
-    _ensure_executor_running()
+    _ensure_executor_running(state)
     return {
         "task_id": item.task_id,
         "url": item.url,
@@ -332,15 +387,18 @@ async def queue_download(req: DownloadRequest):
 
 
 @router.post("/batch")
-async def batch_download(req: BatchRequest):
-    manager = get_manager()
-    cfg = get_config()
+async def batch_download(req: BatchRequest, request: Request):
+    """Queue multiple URLs for download."""
+    state = _get_web_state(request)
+    _check_rate_limit("api_batch", limit=5, state=state)
+    manager = get_manager(state)
+    cfg = get_config(state)
     output_base = cfg.general.output_path
     output = validate_output_path(req.output_path or output_base)
     _safe_output_path(output, output_base)
-    items = []
+    items: list[dict[str, str]] = []
     subtitles_cfg = _resolve_subtitles_request(req.subtitles)
-    sponsorblock_cfg = {"enabled": True} if req.sponsorblock else None
+    sponsorblock_cfg: dict[str, Any] | None = {"enabled": True} if req.sponsorblock else None
     for url in req.urls:
         item = manager.queue_download(
             url=url,
@@ -358,23 +416,25 @@ async def batch_download(req: BatchRequest):
         )
         items.append({"task_id": item.task_id, "url": item.url})
     manager.config["concurrent_workers"] = req.workers
-    _ensure_executor_running()
+    _ensure_executor_running(state)
     return {"queued": len(items), "items": items}
 
 
 @router.post("/playlist")
-async def download_playlist_req(req: PlaylistRequest):
+async def download_playlist_req(req: PlaylistRequest, request: Request):
+    """Start a playlist download in the background."""
+    state = _get_web_state(request)
     url = normalize_url(req.url)
     if not validate_url(url):
         raise HTTPException(status_code=400, detail="Invalid URL")
-    manager = get_manager()
-    cfg = get_config()
+    manager = get_manager(state)
+    cfg = get_config(state)
     output_base = cfg.general.output_path
     output = validate_output_path(req.output_path or output_base)
     _safe_output_path(output, output_base)
     subtitles_cfg = _resolve_subtitles_request(req.subtitles)
-    sponsorblock_cfg = {"enabled": True} if req.sponsorblock else None
-    get_executor().submit(
+    sponsorblock_cfg: dict[str, Any] | None = {"enabled": True} if req.sponsorblock else None
+    get_executor(state).submit(
         manager.download_playlist,
         url=url,
         output_path=str(output),
@@ -394,13 +454,15 @@ async def download_playlist_req(req: PlaylistRequest):
 
 
 @router.get("/status")
-async def get_status():
-    return get_manager().get_status()
+async def get_status(request: Request):
+    """Return overall download manager status."""
+    return get_manager(_get_web_state(request)).get_status()
 
 
 @router.get("/status/{task_id}")
-async def get_task_status(task_id: str):
-    manager = get_manager()
+async def get_task_status(task_id: str, request: Request):
+    """Return status for a specific task."""
+    manager = get_manager(_get_web_state(request))
     item = manager.queue.get_item(task_id)
     if not item:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -420,35 +482,40 @@ async def get_task_status(task_id: str):
 
 
 @router.get("/queue")
-async def get_queue():
-    items = get_manager().queue.get_all_items()
+async def get_queue(request: Request):
+    """Return all items in the download queue."""
+    items = get_manager(_get_web_state(request)).queue.get_all_items()
     return [{"task_id": i.task_id, "url": i.url, "status": i.status.value, "priority": i.priority.name} for i in items]
 
 
 @router.post("/queue/{task_id}/pause")
-async def pause_task(task_id: str):
-    if get_manager().queue.pause(task_id):
+async def pause_task(task_id: str, request: Request):
+    """Pause a queued or running task."""
+    if get_manager(_get_web_state(request)).queue.pause(task_id):
         return {"message": "Task paused"}
     raise HTTPException(status_code=404, detail="Task not found or cannot be paused")
 
 
 @router.post("/queue/{task_id}/resume")
-async def resume_task(task_id: str):
-    if get_manager().queue.resume(task_id):
+async def resume_task(task_id: str, request: Request):
+    """Resume a paused task."""
+    if get_manager(_get_web_state(request)).queue.resume(task_id):
         return {"message": "Task resumed"}
     raise HTTPException(status_code=404, detail="Task not found or cannot be resumed")
 
 
 @router.delete("/queue/{task_id}")
-async def cancel_task(task_id: str):
-    manager = get_manager()
+async def cancel_task(task_id: str, request: Request):
+    """Cancel or remove a task from the queue."""
+    manager = get_manager(_get_web_state(request))
     if manager.queue.cancel(task_id) or manager.queue.remove(task_id):
         return {"message": "Task cancelled"}
     raise HTTPException(status_code=404, detail="Task not found")
 
 
-@router.get("/info")
+@router.get("/info", dependencies=[Depends(require_api_auth)])
 async def get_video_info_endpoint(url: str):
+    """Fetch video metadata and available formats."""
     url = normalize_url(url)
     if not validate_url(url):
         raise HTTPException(status_code=400, detail="Invalid URL")
@@ -475,45 +542,122 @@ async def get_video_info_endpoint(url: str):
 
 @router.get("/platforms")
 async def list_platforms():
+    """List all supported platforms."""
     from src.utils.platform import get_supported_platforms
 
     return get_supported_platforms()
 
 
 @router.get("/config")
-async def get_config_endpoint():
-    return _redact_config(get_config().model_dump())
+async def get_config_endpoint(request: Request):
+    """Return runtime config with sensitive values redacted."""
+    return _redact_config(get_config(_get_web_state(request)).model_dump())
+
+
+_RESTRICTED_CONFIG_KEYS = {
+    "web.api_token",
+    "web.cors_origins",
+    "download.proxy",
+    "download.cookies_file",
+    "download.cookies_from_browser",
+}
+
+
+def _config_token_value_for_comparison(value: str | None) -> str:
+    return (value or "").strip()
+
+
+def _parse_config_value(raw_value: str) -> Any:
+    value: Any = raw_value
+    if raw_value.lower() in ("true", "yes", "1"):
+        value = True
+    elif raw_value.lower() in ("false", "no", "0"):
+        value = False
+    else:
+        try:
+            value = int(raw_value)
+        except ValueError:
+            try:
+                value = float(raw_value)
+            except ValueError:
+                value = raw_value
+    return value
+
+
+def _manager_web_admin_token(state: dict[str, Any]) -> str | None:
+    manager = state.get("manager_instance")
+    if manager is None:
+        return None
+    token = manager.config.get("web_admin_token")
+    if token is None:
+        return None
+    return str(token)
+
+
+def _manager_set_web_admin_token(state: dict[str, Any], token: str | None) -> None:
+    manager = state.get("manager_instance")
+    if manager is None:
+        return
+    manager.config["web_admin_token"] = token
 
 
 @router.put("/config", dependencies=[Depends(require_api_auth)])
-async def update_config(req: ConfigUpdate):
+async def update_config(req: ConfigUpdate, request: Request):
+    """Update a single config key."""
     try:
-        _check_rate_limit("api_config_write", limit=10)
+        state = _get_web_state(request)
+        _check_rate_limit("api_config_write", limit=10, state=state)
         section, key, value = req.section, req.key, req.value
-        if value.lower() in ("true", "yes", "1"):
-            value = True
-        elif value.lower() in ("false", "no", "0"):
-            value = False
+        config_path = f"{section}.{key}"
+        configured_token = _get_configured_api_token(state)
+        supplied_token = ""
+        authorization = request.headers.get("authorization", "")
+        if authorization.lower().startswith("bearer "):
+            supplied_token = authorization[7:].strip()
         else:
-            try:
-                value = int(value)
-            except ValueError:
-                try:
-                    value = float(value)
-                except ValueError:
-                    pass
-        with _manager_lock:
-            global _config_instance, _manager_instance
-            current = _config_instance.model_dump() if _config_instance else load_config().model_dump()
+            supplied_token = request.headers.get("x-api-token", "").strip()
+
+        admin_token = _manager_web_admin_token(state)
+        if admin_token is None and configured_token:
+            admin_token = configured_token
+            _manager_set_web_admin_token(state, admin_token)
+
+        if config_path in _RESTRICTED_CONFIG_KEYS:
+            if not admin_token or _config_token_value_for_comparison(
+                supplied_token
+            ) != _config_token_value_for_comparison(admin_token):
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "Config key '"
+                        + config_path
+                        + "' is security-sensitive. Use admin token authentication to modify it."
+                    ),
+                )
+
+        parsed_value = _parse_config_value(value)
+
+        if config_path in _RESTRICTED_CONFIG_KEYS:
+            if config_path == "web.api_token":
+                _manager_set_web_admin_token(state, str(parsed_value))
+
+        with state["manager_lock"]:
+            current_config = state["config_instance"]
+            current = current_config.model_dump() if current_config else load_config().model_dump()
             if section in current and key in current[section]:
-                current[section][key] = value
+                current[section][key] = parsed_value
                 try:
-                    _config_instance = AppConfig.model_validate(current)
+                    updated_config = AppConfig.model_validate(current)
                 except Exception as e:
                     raise HTTPException(status_code=422, detail=f"Invalid config value: {e}") from e
-                _manager_instance = DownloadManager(_config_instance.model_dump())
-                return {"message": f"Updated {section}.{key} = {value}"}
-        raise HTTPException(status_code=400, detail="Invalid config key")
+                state["config_instance"] = updated_config
+                manager = state["manager_instance"]
+                manager.update_config(updated_config.model_dump())
+                return {"message": f"Updated {section}.{key} = {parsed_value}"}
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid config key",
+            )
     except HTTPException:
         raise
     except Exception:

@@ -1,4 +1,5 @@
 """Tags manager component for Desktop GUI."""
+
 import json
 from pathlib import Path
 
@@ -14,19 +15,20 @@ TAG_COLORS = {
     "default": "#9e9e9e",
 }
 
+
 class TagsManager:
-    def __init__(self, state_dir=".kyro_state"):
+    def __init__(self, state_dir: str = ".kyro_state") -> None:
         self.state_dir = Path(state_dir)
         self.state_dir.mkdir(exist_ok=True)
         self.tags_file = self.state_dir / "tags.json"
-        self._tags = {}
-        self._all_tags = set()
+        self._tags: dict[str, str] = {}
+        self._all_tags: set[str] = set()
         self._load_tags()
 
-    def _load_tags(self):
+    def _load_tags(self) -> None:
         try:
             if self.tags_file.exists():
-                with open(self.tags_file, "r") as f:
+                with open(self.tags_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 self._tags = data.get("tags", {})
                 self._all_tags = set(data.get("all_tags", []))
@@ -34,14 +36,16 @@ class TagsManager:
             self._tags = {}
             self._all_tags = set()
 
-    def _save_tags(self):
+    def _save_tags(self) -> None:
         try:
-            with open(self.tags_file, "w") as f:
+            tmp = self.tags_file.with_suffix(".tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
                 json.dump({"tags": self._tags, "all_tags": list(self._all_tags)}, f, indent=2)
+            tmp.replace(self.tags_file)
         except Exception:
             pass
 
-    def add_tags(self, task_id, tags_str):
+    def add_tags(self, task_id: str, tags_str: str) -> None:
         if not tags_str:
             return
         for tag in tags_str.split(","):
@@ -51,10 +55,10 @@ class TagsManager:
         self._tags[task_id] = tags_str
         self._save_tags()
 
-    def get_tags(self, task_id):
+    def get_tags(self, task_id: str) -> str:
         return self._tags.get(task_id, "")
 
-    def remove_tag_from_task(self, task_id, tag_to_remove):
+    def remove_tag_from_task(self, task_id: str, tag_to_remove: str) -> None:
         tags_str = self._tags.get(task_id, "")
         if not tags_str:
             return
@@ -68,22 +72,22 @@ class TagsManager:
                 del self._tags[task_id]
             self._save_tags()
 
-    def get_all_tags(self):
+    def get_all_tags(self) -> list[str]:
         return sorted(self._all_tags)
 
-    def get_tag_color(self, tag):
+    def get_tag_color(self, tag: str) -> str:
         tag = tag.strip().lower()
         return TAG_COLORS.get(tag, TAG_COLORS["default"])
 
-    def get_tasks_by_tag(self, tag):
+    def get_tasks_by_tag(self, tag: str) -> list[str]:
         tag = tag.strip().lower()
-        result = []
+        result: list[str] = []
         for task_id, tags_str in self._tags.items():
             if tag in [t.strip().lower() for t in tags_str.split(",")]:
                 result.append(task_id)
         return result
 
-    def delete_tag_globally(self, tag):
+    def delete_tag_globally(self, tag: str) -> None:
         tag = tag.strip().lower()
         if tag in self._all_tags:
             self._all_tags.discard(tag)
@@ -100,8 +104,8 @@ class TagsManager:
             del self._tags[task_id]
         self._save_tags()
 
-    def get_tag_stats(self):
-        stats = {}
+    def get_tag_stats(self) -> dict[str, int]:
+        stats: dict[str, int] = {}
         for tag in self._all_tags:
             stats[tag] = len(self.get_tasks_by_tag(tag))
         return stats

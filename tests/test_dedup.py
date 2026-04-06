@@ -1,13 +1,15 @@
 """Tests for dedup utilities."""
+
 from src.utils.dedup import get_file_hash, check_duplicate, generate_unique_filename
 
+
 class TestGetFileHash:
-    def test_md5_hash(self, tmp_path):
+    def test_sha256_hash(self, tmp_path):
         f = tmp_path / "test.txt"
         f.write_text("hello")
         h = get_file_hash(str(f))
         assert h is not None
-        assert len(h) == 32
+        assert len(h) == 64
 
     def test_different_files_different_hashes(self, tmp_path):
         f1 = tmp_path / "a.txt"

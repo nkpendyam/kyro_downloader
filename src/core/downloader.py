@@ -1,13 +1,12 @@
 """Core yt-dlp wrapper with error handling and post-processing."""
 
 import os
-import platform
 import time
 from typing import Any, Callable, cast
 
 import yt_dlp
-from src.core.progress import create_progress_hook  # pyright: ignore[reportUnknownVariableType]
-from src.core.retry import retry  # pyright: ignore[reportUnknownVariableType]
+from src.core.retry import retry
+from src.core.progress import create_progress_hook
 from src.utils.logger import get_logger  # pyright: ignore[reportUnknownVariableType]
 from src.utils.validation import validate_url  # pyright: ignore[reportUnknownVariableType]
 from src.utils.platform import is_playlist_url
@@ -24,29 +23,31 @@ def _retry_sleep(n: int) -> int:
 logger: Any = get_logger(__name__)
 
 
-def _snapshot_files(output_path: str) -> dict[str, int]:
-    """Snapshot file mtimes within output directory."""
-    snapshot: dict[str, int] = {}
-    if not os.path.isdir(output_path):
-        return snapshot
-    for root, _, filenames in os.walk(output_path):
-        for filename in filenames:
-            filepath = os.path.abspath(os.path.join(root, filename))
-            try:
-                snapshot[filepath] = os.stat(filepath).st_mtime_ns
-            except OSError:
-                continue
-    return snapshot
+def _collect_written_files_from_info(info: Any) -> list[str]:
+    """Extract written file paths from yt-dlp result payload."""
+    if info is None:
+        return []
 
+    collected: list[str] = []
 
-def _collect_written_files(before_snapshot: dict[str, int], output_path: str) -> list[str]:
-    """Collect new or modified files written during a download."""
-    after_snapshot = _snapshot_files(output_path)
-    written_files = [
-        path for path, mtime in after_snapshot.items() if path not in before_snapshot or mtime > before_snapshot[path]
-    ]
-    written_files.sort()
-    return written_files
+    def _consume(node: Any) -> None:
+        if isinstance(node, dict):
+            filename = node.get("filepath") or node.get("filename") or node.get("_filename")
+            if isinstance(filename, str) and filename:
+                collected.append(os.path.abspath(filename))
+
+            requested = node.get("requested_downloads")
+            if isinstance(requested, list):
+                for entry in requested:
+                    _consume(entry)
+
+            entries = node.get("entries")
+            if isinstance(entries, list):
+                for entry in entries:
+                    _consume(entry)
+
+    _consume(info)
+    return sorted(set(collected))
 
 
 class DownloadError(Exception):
@@ -316,7 +317,8 @@ def get_video_info(
         raise DownloadError(f"Invalid URL: {url}", url=url)
     ydl_opts: dict[str, Any] = {"quiet": True, "no_warnings": True, "skip_download": True, "extract_flat": False}
     if is_playlist_url(url):
-        ydl_opts["extract_flat"] = "in_playlist"
+        # Prefer complete playlist metadata for quality analysis and UI labels.
+        ydl_opts["extract_flat"] = False
     if cookies_file:
         ydl_opts["cookiefile"] = cookies_file
     elif cookies_from_browser:
@@ -328,7 +330,7 @@ def get_video_info(
             info = ydl.extract_info(url, download=False)
             return VideoInfo(cast(dict[str, Any], info))
     except Exception as e:
-        if "DownloadError" in type(e).__name__:
+        if isinstance(e, DownloadError):
             raise DownloadError(str(e), url=url) from e
         raise DownloadError(f"Failed to extract info: {e}", url=url) from e
 
@@ -482,14 +484,16 @@ def download_single(
 ) -> list[str]:
     cfg: ConfigDict = config or {}
     cancel_event = cfg.get("cancel_event")
+    pause_event = cfg.get("pause_event")
     if cancel_event and hasattr(cancel_event, "is_set") and cancel_event.is_set():
         raise DownloadError("Download cancelled", url=url)
-    before_snapshot = _snapshot_files(output_path)
     hook = progress_hook
     if hook is None and progress_tracker and task_id:
         hook = cast(ProgressHook, create_progress_hook(progress_tracker, task_id))
 
     def wrapped_hook(progress_data: dict[str, Any]) -> None:
+        while pause_event and hasattr(pause_event, "is_set") and pause_event.is_set():
+            time.sleep(0.1)
         if cancel_event and hasattr(cancel_event, "is_set") and cancel_event.is_set():
             raise DownloadError("Download cancelled", url=url)
         if hook:
@@ -522,21 +526,35 @@ def download_single(
     )
     try:
         with yt_dlp.YoutubeDL(cast(Any, ydl_opts)) as ydl:
-            ydl.download([url])
-        if platform.system() == "Windows":
-            time.sleep(0.5)
+            result_info = ydl.extract_info(url, download=True)
         logger.info(f"Download complete: {url}")
-        written_files = _collect_written_files(before_snapshot, output_path)
+        written_files = _collect_written_files_from_info(result_info)
         return written_files
     except FileNotFoundError as e:
         if "temp." in str(e) and os.path.exists(output_path):
             logger.info(f"Download complete (postprocessor rename skipped): {url}")
-            written_files = _collect_written_files(before_snapshot, output_path)
-            return written_files
+            return []
         raise DownloadError(f"Download failed: {e}", url=url) from e
 
 
-@retry(max_attempts=3, base_delay=5.0, backoff="exponential")
+class PlaylistResult:
+    """Result object for playlist downloads with partial result metadata."""
+
+    def __init__(
+        self,
+        completed_files: list[str],
+        completed_count: int,
+        total_count: int,
+        is_cancelled: bool,
+        failed_urls: list[str],
+    ) -> None:
+        self.completed_files = completed_files
+        self.completed_count = completed_count
+        self.total_count = total_count
+        self.is_cancelled = is_cancelled
+        self.failed_urls = failed_urls
+
+
 def download_playlist(
     url: str,
     output_path: str,
@@ -545,12 +563,50 @@ def download_playlist(
     format_id: str | None = None,
     only_audio: bool = False,
     cancel_event: Any | None = None,
-) -> list[str]:
+) -> PlaylistResult:
     cfg: ConfigDict = config or {}
     effective_cancel_event = cancel_event or cfg.get("cancel_event")
     if effective_cancel_event and hasattr(effective_cancel_event, "is_set") and effective_cancel_event.is_set():
-        return []
-    before_snapshot = _snapshot_files(output_path)
+        return PlaylistResult(completed_files=[], completed_count=0, total_count=0, is_cancelled=True, failed_urls=[])
+
+    playlist_progress_task_id = f"playlist:{abs(hash(url))}"
+
+    def _playlist_progress_hook(progress_data: dict[str, Any]) -> None:
+        if not progress_tracker:
+            return
+        status = str(progress_data.get("status", ""))
+        info_dict = progress_data.get("info_dict", {})
+        if not isinstance(info_dict, dict):
+            info_dict = {}
+
+        playlist_index = int(info_dict.get("playlist_index") or progress_data.get("playlist_index") or 0)
+        total_entries = int(info_dict.get("n_entries") or progress_data.get("n_entries") or 0)
+        current_title = str(info_dict.get("title") or progress_data.get("filename") or url)
+
+        downloaded_bytes = int(progress_data.get("downloaded_bytes") or 0)
+        total_bytes = int(progress_data.get("total_bytes") or progress_data.get("total_bytes_estimate") or 0)
+        percent = float(progress_data.get("_percent_str", "0").strip().rstrip("%") or 0)
+
+        overall_percent = 0.0
+        if total_entries > 0 and playlist_index > 0:
+            entry_fraction = min(max(percent, 0.0), 100.0) / 100.0
+            overall_percent = ((playlist_index - 1) + entry_fraction) / total_entries * 100
+
+        progress_tracker.update(
+            playlist_progress_task_id,
+            filename=f"Entry {playlist_index}/{total_entries}: {current_title}" if total_entries else current_title,
+            downloaded_bytes=downloaded_bytes,
+            total_bytes=total_bytes,
+            percentage=overall_percent if overall_percent > 0 else percent,
+            status="downloading" if status == "downloading" else status,
+        )
+
+        if status == "finished":
+            progress_tracker.complete(playlist_progress_task_id)
+
+    if progress_tracker:
+        progress_tracker.add_task(playlist_progress_task_id, filename=url)
+
     playlist_cfg = cfg.get("playlist", {})
     ydl_opts = build_ydl_opts(
         output_path=output_path,
@@ -567,6 +623,7 @@ def download_playlist(
         proxy=cfg.get("proxy"),
         cookies_file=cfg.get("cookies_file"),
         cookies_from_browser=cfg.get("cookies_from_browser"),
+        progress_hook=_playlist_progress_hook if progress_tracker else None,
         playlist=True,
         playlist_config=playlist_cfg,
         prefer_format=cfg.get("prefer_format", "mp4"),
@@ -577,14 +634,47 @@ def download_playlist(
     try:
         with yt_dlp.YoutubeDL(cast(Any, ydl_opts)) as ydl:
             if effective_cancel_event and hasattr(effective_cancel_event, "is_set") and effective_cancel_event.is_set():
-                return _collect_written_files(before_snapshot, output_path)
-            ydl.download([url])
-            if effective_cancel_event and hasattr(effective_cancel_event, "is_set") and effective_cancel_event.is_set():
-                return _collect_written_files(before_snapshot, output_path)
-        logger.info(f"Playlist download complete: {url}")
-        written_files = _collect_written_files(before_snapshot, output_path)
-        return written_files
+                return PlaylistResult(
+                    completed_files=[], completed_count=0, total_count=0, is_cancelled=True, failed_urls=[]
+                )
+            result_info = ydl.extract_info(url, download=True)
+            written_files = _collect_written_files_from_info(result_info)
+            is_cancelled = (
+                effective_cancel_event is not None
+                and hasattr(effective_cancel_event, "is_set")
+                and effective_cancel_event.is_set()
+            )
+            entries = result_info.get("entries", []) if isinstance(result_info, dict) else []
+            total_count = len(entries)
+            completed_count = 0
+            failed_urls: list[str] = []
+            for entry in entries:
+                if isinstance(entry, dict):
+                    entry_written_files = _collect_written_files_from_info(entry)
+                    if entry_written_files:
+                        completed_count += 1
+                        continue
+                    entry_url = entry.get("url", "")
+                    entry_title = entry.get("title", "")
+                    if entry.get("filepath") or entry.get("filename") or entry.get("_filename"):
+                        completed_count += 1
+                        continue
+                    if entry_url:
+                        failed_urls.append(entry_url)
+                    elif entry_title:
+                        failed_urls.append(entry_title)
+            if total_count == 0:
+                completed_count = len(written_files)
+            if is_cancelled:
+                logger.warning(f"Playlist download cancelled: {completed_count}/{total_count} completed for {url}")
+            return PlaylistResult(
+                completed_files=written_files,
+                completed_count=completed_count,
+                total_count=total_count,
+                is_cancelled=is_cancelled,
+                failed_urls=failed_urls,
+            )
     except Exception as e:
-        if "DownloadError" in type(e).__name__:
+        if isinstance(e, DownloadError):
             raise DownloadError(str(e), url=url) from e
         raise DownloadError(f"Playlist download failed: {e}", url=url) from e

@@ -36,7 +36,9 @@ class KyroApp(ctk.CTk):
 
         # Config and managers
         self.config = load_config()
-        self.manager = DownloadManager(self.config.model_dump())
+        from src.plugins.loader import PluginLoader
+
+        self.manager = DownloadManager(self.config.model_dump(), plugin_loader=PluginLoader())
         self.stats = StatsTracker()
         self.archive = DownloadArchive()
         self.scheduler = DownloadScheduler()
@@ -954,7 +956,6 @@ class KyroApp(ctk.CTk):
     # ==================== UTILITY METHODS ====================
 
     def _bind_keyboard_shortcuts(self):
-        self.bind("<Control-v>", self._paste_url_from_clipboard)
         self.bind("<Control-s>", lambda e: self._save_settings())
         self.bind("<Control-q>", lambda e: self.quit())
         self.bind("<Return>", lambda e: self._fetch_info())

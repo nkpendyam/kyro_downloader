@@ -1,4 +1,4 @@
-const API='/api';let ws=null;
+const API='/api/v1';let ws=null;
 document.addEventListener('DOMContentLoaded',()=>{setupEventListeners();connectWebSocket();loadPlatforms()});
 function setupEventListeners(){document.getElementById('btn-download').addEventListener('click',handleDownload);document.getElementById('btn-info').addEventListener('click',handleInfo);document.getElementById('btn-refresh').addEventListener('click',loadQueue)}
 function connectWebSocket(){const protocol=window.location.protocol==='https:'?'wss:':'ws:';const token=(localStorage.getItem('kyro_api_token')||'').trim();ws=token?new WebSocket(`${protocol}//${window.location.host}/ws/progress`,`bearer ${token}`):new WebSocket(`${protocol}//${window.location.host}/ws/progress`);ws.onopen=()=>{ws.send(JSON.stringify({type:'subscribe'}))};ws.onmessage=(event)=>{const data=JSON.parse(event.data);if(data.type==='progress')updateProgress(data)};ws.onclose=()=>{setTimeout(connectWebSocket,3000)}}

@@ -1,4 +1,5 @@
 """Tests for progress module."""
+
 import asyncio
 from unittest.mock import MagicMock
 from src.core.progress import ProgressTracker, create_progress_hook, ProgressInfo
@@ -87,6 +88,17 @@ class TestProgressTracker:
         pt.add_callback(callback)
         pt.remove_callback(callback)
         assert callback not in pt._callbacks
+
+    def test_task_store_is_bounded_and_prunes_completed_first(self):
+        pt = ProgressTracker(max_tasks=2)
+        pt.add_task("t1", filename="1.mp4", total_bytes=100)
+        pt.complete("t1")
+        pt.add_task("t2", filename="2.mp4", total_bytes=100)
+        pt.add_task("t3", filename="3.mp4", total_bytes=100)
+
+        assert pt.get_task("t1") is None
+        assert pt.get_task("t2") is not None
+        assert pt.get_task("t3") is not None
 
     def test_update_schedules_websocket_broadcast_with_active_loop(self, monkeypatch):
         pt = ProgressTracker()
@@ -187,6 +199,7 @@ class TestProgressInfo:
 
     def test_duration_in_progress(self):
         import time
+
         info = ProgressInfo(started_at=time.time() - 5)
         assert 4 <= info.duration <= 6
 

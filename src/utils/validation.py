@@ -21,10 +21,13 @@ def validate_url(url: str | None) -> bool:
     host = parsed.hostname
     if not host:
         return False
-    if host == "localhost":
+    allow_private = os.environ.get("KYRO_ALLOW_PRIVATE_IPS", "").lower() in ("1", "true", "yes")
+    if allow_private:
         return True
     try:
-        ipaddress.ip_address(host)
+        ip = ipaddress.ip_address(host)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            return False
         return True
     except ValueError:
         pass
@@ -66,10 +69,17 @@ def validate_integer(value: str | None, min_val: int | None = None, max_val: int
         return None
 
 
-def sanitize_filename(filename: str) -> str:
+def sanitize_filename(filename: str, output_dir: str | Path | None = None) -> str:
     invalid = '<>:"/\\|?*'
     sanitized = "".join("_" if ch in invalid or ord(ch) < 32 else ch for ch in filename).strip()
-    return sanitized[:200] if sanitized else "untitled"
+    if not sanitized:
+        return "untitled"
+    max_len = 200
+    if output_dir is not None:
+        dir_len = len(str(output_dir))
+        max_path = 260
+        max_len = min(200, max(10, max_path - dir_len - 10))
+    return sanitized[:max_len]
 
 
 def validate_batch_file(filepath: str) -> list[str]:

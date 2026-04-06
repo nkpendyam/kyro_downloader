@@ -23,6 +23,7 @@ dependencies = [
     "plyer",
     "packaging",
     "mutagen",
+    "python-dotenv",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +44,10 @@ include = ["src*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow-running integration scenarios",
+    "stress: marks tests as stress/load validation scenarios",
+]
 
 [tool.ruff]
 target-version = "py310"

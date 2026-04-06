@@ -1,20 +1,27 @@
 """Automatic yt-dlp update checker."""
+
 import sys
 import subprocess
 import importlib.metadata
+
 from packaging import version
+
 from src.utils.logger import get_logger
+
 logger = get_logger(__name__)
 
-def get_current_version():
+
+def get_current_version() -> str | None:
     try:
         return importlib.metadata.version("yt-dlp")
     except Exception:
         return None
 
-def get_latest_version():
+
+def get_latest_version() -> str | None:
     try:
         import requests
+
         r = requests.get("https://pypi.org/pypi/yt-dlp/json", timeout=10)
         r.raise_for_status()
         return r.json()["info"]["version"]
@@ -22,15 +29,19 @@ def get_latest_version():
         logger.warning(f"Failed to check yt-dlp version: {e}")
         return None
 
-def check_for_update():
+
+def check_for_update() -> dict[str, bool | str | None]:
     current, latest = get_current_version(), get_latest_version()
     if not current or not latest:
         return {"update_available": False, "current": current, "latest": latest}
     return {"update_available": version.parse(latest) > version.parse(current), "current": current, "latest": latest}
 
-def update_ytdlp():
+
+def update_ytdlp() -> bool:
     try:
-        result = subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"], capture_output=True, text=True, timeout=120)
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"], capture_output=True, text=True, timeout=120
+        )
         if result.returncode != 0:
             logger.warning(f"yt-dlp update failed: {result.stderr}")
         return result.returncode == 0
@@ -41,8 +52,10 @@ def update_ytdlp():
         logger.error(f"yt-dlp update failed: {e}")
         return False
 
-def auto_update_on_startup(check_only=True):
+
+def auto_update_on_startup(check_only: bool = True) -> None:
     from rich import print as rich_print
+
     status = check_for_update()
     if status.get("update_available"):
         if check_only:

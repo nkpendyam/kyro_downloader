@@ -94,3 +94,29 @@ class TestConcurrentExecutor:
         assert worker.is_alive() is False
         assert item._cancel_event.is_set() is True
         assert callback.called is True
+
+    def test_stop_mid_execution_is_idempotent(self, monkeypatch):
+        queue = DownloadQueue()
+        executor = ConcurrentExecutor(queue=queue, max_workers=2)
+
+        for idx in range(3):
+            queue.add(url=f"https://example.com/video-{idx}", output_path="./downloads")
+
+        def _slow_download_single(**kwargs):
+            cancel_event = kwargs["config"].get("cancel_event")
+            for _ in range(100):
+                if cancel_event and cancel_event.is_set():
+                    raise Exception("Download cancelled")
+                time.sleep(0.01)
+            return []
+
+        monkeypatch.setattr(concurrent_module, "download_single", _slow_download_single)
+
+        executor.start_async()
+        time.sleep(0.05)
+        executor.stop()
+        executor.stop()
+
+        assert executor.is_running is False
+        assert executor._worker_thread is not None
+        assert executor._worker_thread.is_alive() is False

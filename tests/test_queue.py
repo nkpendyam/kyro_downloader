@@ -57,6 +57,15 @@ class TestDownloadQueue:
         assert item.status.value == "cancelled"
         assert item._cancel_event.is_set() is True
 
+    def test_pause_resume_uses_pause_event(self):
+        queue = DownloadQueue()
+        item = queue.add(url="https://example.com")
+        assert queue.pause(item.task_id) is True
+        assert item._paused_event.is_set() is True
+        assert item._cancel_event.is_set() is False
+        assert queue.resume(item.task_id) is True
+        assert item._paused_event.is_set() is False
+
     def test_pending_count(self):
         queue = DownloadQueue()
         queue.add(url="https://one.com")
@@ -96,3 +105,52 @@ class TestDownloadQueue:
         queue = DownloadQueue()
         found = queue.get_item("nonexistent")
         assert found is None
+
+    def test_export_state_contains_only_incomplete_items(self):
+        queue = DownloadQueue()
+        queue.add(url="https://pending.com")
+        active = queue.add(url="https://active.com")
+        queue.get_next()
+        queue.complete(active.task_id)
+        state = queue.export_state()
+        urls = {item["url"] for item in state["items"]}
+        assert "https://pending.com" in urls
+        assert "https://active.com" not in urls
+
+    def test_import_state_restores_pause_and_priority(self):
+        queue = DownloadQueue()
+        data = {
+            "version": 1,
+            "items": [
+                {
+                    "task_id": "task-1",
+                    "url": "https://example.com/one",
+                    "status": "paused",
+                    "priority": "HIGH",
+                    "format_id": None,
+                    "only_audio": False,
+                    "output_path": "downloads",
+                    "config": {"audio_format": "mp3"},
+                    "created_at": 1.0,
+                    "retries": 0,
+                    "metadata": {},
+                }
+            ],
+        }
+        restored = queue.import_state(data)
+        assert restored == 1
+        item = queue.get_item("task-1")
+        assert item is not None
+        assert item.status.value == "paused"
+        assert item.priority == Priority.HIGH
+
+    def test_history_is_bounded_while_totals_remain_accurate(self):
+        queue = DownloadQueue(max_history=2)
+        items = [queue.add(url=f"https://example.com/{i}") for i in range(4)]
+        for item in items:
+            queue.get_next()
+            queue.complete(item.task_id)
+
+        history = queue.get_history()
+        assert len(history) == 2
+        assert queue.completed_count == 4

@@ -1,10 +1,14 @@
 """URL shortener expansion utility."""
+
 import requests
+
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-def expand_url(short_url, max_redirects=10):
+
+def expand_url(short_url: str, max_redirects: int = 10) -> str:
+    del max_redirects
     try:
         r = requests.head(short_url, allow_redirects=True, timeout=10)
         if r.status_code in (200, 301, 302):

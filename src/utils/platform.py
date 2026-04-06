@@ -1,6 +1,7 @@
 """Multi-platform URL detection and social media content type handling."""
 
-from src.utils.validation import validate_platform
+from urllib.parse import urlparse
+
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -320,30 +321,21 @@ PLATFORM_CONFIG = {
 }
 
 
-def get_platform_info(url):
-    platform = validate_platform(url)
-    if platform and platform in PLATFORM_CONFIG:
-        return PLATFORM_CONFIG[platform]
-    if platform:
-        return {
-            "name": platform,
-            "icon": "\U0001f310",
-            "supports_video": True,
-            "supports_audio": True,
-            "supports_playlist": True,
-            "supports_shorts": False,
-            "supports_stories": False,
-            "supports_posts": False,
-            "supports_live": False,
-            "max_resolution": "unknown",
-            "supports_hdr": False,
-            "supports_dolby": False,
-            "audio_formats": ["mp3", "aac"],
-        }
+def get_platform_info(url: str | None) -> dict[str, object] | None:
+    if not url or not isinstance(url, str):
+        return None
+    try:
+        netloc = urlparse(url).netloc.lower().replace("www.", "")
+    except Exception:
+        return None
+
+    for platform_domain, platform_info in PLATFORM_CONFIG.items():
+        if netloc == platform_domain or netloc.endswith(f".{platform_domain}"):
+            return platform_info
     return None
 
 
-def detect_content_type(url):
+def detect_content_type(url: str) -> str:
     u = url.lower()
     if any(p in u for p in ["/stories/", "/story/", "story_id="]):
         return "story"
@@ -360,39 +352,61 @@ def detect_content_type(url):
     return "video"
 
 
-def is_playlist_url(url):
+def is_playlist_url(url: str) -> bool:
     return detect_content_type(url) == "playlist"
 
 
-def is_story_url(url):
+def is_story_url(url: str) -> bool:
     return detect_content_type(url) == "story"
 
 
-def normalize_url(url):
+def normalize_url(url: str | None) -> str | None:
+    from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+
     if not url or not isinstance(url, str):
         return url
     url = url.strip()
     if not url.startswith(("http://", "https://")):
         url = f"https://{url}"
+    parsed = urlparse(url)
+    netloc = parsed.netloc.lower()
+    path = parsed.path
+    query = parse_qs(parsed.query)
+
+    if netloc.startswith("m."):
+        netloc = "www." + netloc[2:]
+
     if "youtu.be/" in url:
-        video_id = url.split("/")[-1].split("?")[0]
-        url = f"https://www.youtube.com/watch?v={video_id}"
-    return url
+        video_id = path.lstrip("/").split("/")[0].split("?")[0]
+        return f"https://www.youtube.com/watch?v={video_id}"
+
+    if netloc in ("www.youtube.com", "youtube.com"):
+        parts = path.strip("/").split("/")
+        if len(parts) >= 2 and parts[0] in ("shorts", "embed", "v"):
+            video_id = parts[1]
+            return f"https://www.youtube.com/watch?v={video_id}"
+
+    keep_params = {}
+    for key in ("v", "list"):
+        if key in query:
+            keep_params[key] = query[key]
+    new_query = urlencode(keep_params, doseq=True) if keep_params else ""
+    return urlunparse((parsed.scheme, netloc, path, parsed.params, new_query, parsed.fragment))
 
 
-def get_supported_platforms():
+def get_supported_platforms() -> list[dict[str, object]]:
     return [{"domain": d, **info} for d, info in PLATFORM_CONFIG.items()]
 
 
-def get_hdr_formats():
+def get_hdr_formats() -> list[str]:
     return ["337", "315", "334", "336", "401"]
 
 
-def get_dolby_audio_formats():
+def get_dolby_audio_formats() -> list[str]:
     return ["258", "257", "256"]
 
 
-def build_quality_preset(quality, hdr=False, dolby=False):
+def build_quality_preset(quality: str, hdr: bool = False, dolby: bool = False) -> str:
     qmap = dict(QUALITY_HEIGHT_MAP)
     qmap["2160p"] = QUALITY_HEIGHT_MAP["4k"]
     height = qmap.get(str(quality).lower())
@@ -400,5 +414,5 @@ def build_quality_preset(quality, hdr=False, dolby=False):
     if hdr:
         return f"{video_selector}[dynamic_range=HDR10|HLG|DV]+bestaudio/best/{video_selector}+bestaudio/best"
     if dolby:
-        return f"{video_selector}+bestaudio[acodec^=ec-3|ac-3]/{video_selector}+bestaudio/best"
+        return f"{video_selector}+bestaudio[acodec^=ec-3]/{video_selector}+bestaudio[acodec^=ac-3]/{video_selector}+bestaudio/best"
     return f"{video_selector}+bestaudio/best"
