@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-04-06
+
+### Added
+- Stress and E2E test coverage for queue concurrency, executor stability, and real yt-dlp integration paths
+- GUI state component persistence tests for accessibility settings, tags, and history behavior
+
+### Changed
+- Hardened persistence with UTF-8 + atomic write patterns across config/services/gui state files
+- Bounded in-memory growth for progress/task and queue history tracking while preserving aggregate counters
+- Improved typing consistency across config, core, and utility modules with explicit return and parameter annotations
+
+### Fixed
+- Download manager compatibility regressions (`queue_batch`, `execute`, `download_now`) and playlist outcome notifications
+- Web auth and API safeguards, including restricted config key handling and unauthenticated health response minimization
+- CLI/web argument forwarding and lazy banner import behavior
+
 ## [1.0.0] - 2026-04-05
 
 ### Added
