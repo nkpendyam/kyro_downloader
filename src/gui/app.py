@@ -9,11 +9,6 @@ from tkinter import filedialog
 
 import customtkinter as ctk
 
-# Backward-compatible alias for legacy widget namespace usage.
-# Some UI code still references ctk.ctk.CTk* and ctk.ctk.ctk.CTk* forms.
-if not hasattr(ctk, "ctk"):
-    ctk.ctk = ctk
-
 from src import __version__
 from src.config.manager import load_config, save_config
 from src.core.download_manager import DownloadManager
@@ -64,24 +59,20 @@ class KyroApp(ctk.CTk):
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x", padx=20, pady=(15, 5))
 
-        ctk.ctk.ctk.CTkLabel(
-            header, text="Kyro Downloader", font=ctk.ctk.ctk.CTkFont(size=24, weight="bold"), text_color="#3B8ED0"
+        ctk.CTkLabel(
+            header, text="Kyro Downloader", font=ctk.CTkFont(size=24, weight="bold"), text_color="#3B8ED0"
         ).pack(side="left")
-        ctk.ctk.ctk.CTkLabel(header, text=f"v{__version__}", font=ctk.ctk.ctk.CTkFont(size=12), text_color="gray").pack(
+        ctk.CTkLabel(header, text=f"v{__version__}", font=ctk.CTkFont(size=12), text_color="gray").pack(
             side="left", padx=(10, 0)
         )
 
         ctk.CTkFrame(header, width=1, height=30, fg_color="gray").pack(side="left", padx=20)
 
-        ctk.ctk.ctk.CTkButton(header, text="Settings", width=80, command=self._show_settings_dialog).pack(
+        ctk.CTkButton(header, text="Settings", width=80, command=self._show_settings_dialog).pack(side="right", padx=5)
+        ctk.CTkButton(header, text="Open Folder", width=90, command=self._open_download_folder).pack(
             side="right", padx=5
         )
-        ctk.ctk.ctk.CTkButton(header, text="Open Folder", width=90, command=self._open_download_folder).pack(
-            side="right", padx=5
-        )
-        ctk.ctk.ctk.CTkButton(header, text="Toggle Theme", width=100, command=self._toggle_theme).pack(
-            side="right", padx=5
-        )
+        ctk.CTkButton(header, text="Toggle Theme", width=100, command=self._toggle_theme).pack(side="right", padx=5)
 
         # Tab view
         self.tabview = ctk.CTkTabview(self)
@@ -109,37 +100,37 @@ class KyroApp(ctk.CTk):
 
     def _build_download_tab(self):
         tab = self.tab_download
-        scroll = ctk.ctk.ctk.CTkScrollableFrame(tab)
+        scroll = ctk.CTkScrollableFrame(tab)
         scroll.pack(fill="both", expand=True)
 
         # URL input
         url_frame = ctk.CTkFrame(scroll, fg_color="transparent")
         url_frame.pack(fill="x", padx=20, pady=(10, 5))
-        self.url_entry = ctk.ctk.CTkEntry(
-            url_frame, placeholder_text="Paste URL or search query...", height=40, font=ctk.ctk.CTkFont(size=14)
+        self.url_entry = ctk.CTkEntry(
+            url_frame, placeholder_text="Paste URL or search query...", height=40, font=ctk.CTkFont(size=14)
         )
         self.url_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
         self.url_entry.bind("<Return>", lambda e: self._fetch_info())
         self._setup_url_drop_target()
-        self.fetch_btn = ctk.ctk.CTkButton(url_frame, text="Fetch Info", width=100, command=self._fetch_info)
+        self.fetch_btn = ctk.CTkButton(url_frame, text="Fetch Info", width=100, command=self._fetch_info)
         self.fetch_btn.pack(side="right")
 
         # Options row
         opts_frame = ctk.CTkFrame(scroll, fg_color="transparent")
         opts_frame.pack(fill="x", padx=20, pady=5)
-        ctk.ctk.CTkLabel(opts_frame, text="Quality:").pack(side="left", padx=(0, 5))
-        self.quality_combo = ctk.ctk.CTkComboBox(opts_frame, values=["Best Available"], width=180)
+        ctk.CTkLabel(opts_frame, text="Quality:").pack(side="left", padx=(0, 5))
+        self.quality_combo = ctk.CTkComboBox(opts_frame, values=["Best Available"], width=180)
         self.quality_combo.set("Best Available")
         self.quality_combo.pack(side="left", padx=(0, 10))
-        ctk.ctk.CTkLabel(opts_frame, text="Format:").pack(side="left", padx=(0, 5))
-        self.format_combo = ctk.ctk.CTkComboBox(
+        ctk.CTkLabel(opts_frame, text="Format:").pack(side="left", padx=(0, 5))
+        self.format_combo = ctk.CTkComboBox(
             opts_frame, values=["video", "audio"], width=100, command=self._toggle_audio_format
         )
         self.format_combo.set("video")
         self.format_combo.pack(side="left", padx=(0, 10))
-        ctk.ctk.CTkLabel(opts_frame, text="Preset:").pack(side="left", padx=(0, 5))
+        ctk.CTkLabel(opts_frame, text="Preset:").pack(side="left", padx=(0, 5))
         preset_names = ["None"] + list(self.presets_manager.get_all_presets().keys())
-        self.preset_combo = ctk.ctk.CTkComboBox(opts_frame, values=preset_names, width=180)
+        self.preset_combo = ctk.CTkComboBox(opts_frame, values=preset_names, width=180)
         self.preset_combo.set("None")
         self.preset_combo.pack(side="left", padx=(0, 10))
 
@@ -147,14 +138,14 @@ class KyroApp(ctk.CTk):
         self.audio_quality_frame = ctk.CTkFrame(scroll, fg_color="transparent")
         self.audio_quality_frame.pack(fill="x", padx=20, pady=5)
         self.audio_quality_frame.pack_forget()
-        ctk.ctk.CTkLabel(self.audio_quality_frame, text="Audio Quality:").pack(side="left", padx=(0, 5))
-        self.audio_quality_combo = ctk.ctk.CTkComboBox(
+        ctk.CTkLabel(self.audio_quality_frame, text="Audio Quality:").pack(side="left", padx=(0, 5))
+        self.audio_quality_combo = ctk.CTkComboBox(
             self.audio_quality_frame, values=["Smart Best Available (Auto)"], width=200
         )
         self.audio_quality_combo.set("Smart Best Available (Auto)")
         self.audio_quality_combo.pack(side="left", padx=(0, 10))
-        ctk.ctk.CTkLabel(self.audio_quality_frame, text="Format:").pack(side="left", padx=(0, 5))
-        self.audio_format_combo = ctk.ctk.CTkComboBox(
+        ctk.CTkLabel(self.audio_quality_frame, text="Format:").pack(side="left", padx=(0, 5))
+        self.audio_format_combo = ctk.CTkComboBox(
             self.audio_quality_frame, values=["mp3", "flac", "aac", "opus", "wav", "alac", "ogg"], width=100
         )
         self.audio_format_combo.set("mp3")
@@ -165,71 +156,69 @@ class KyroApp(ctk.CTk):
         self.subtitle_frame = ctk.CTkFrame(scroll, fg_color="transparent")
         self.subtitle_frame.pack(fill="x", padx=20, pady=5)
         self.subtitle_enabled_var = ctk.BooleanVar(value=bool(self.config.subtitles.enabled))
-        self.subtitle_enabled_switch = ctk.ctk.CTkSwitch(
+        self.subtitle_enabled_switch = ctk.CTkSwitch(
             self.subtitle_frame,
             text="Download Subtitles",
             variable=self.subtitle_enabled_var,
         )
         self.subtitle_enabled_switch.pack(side="left", padx=(0, 10))
         self.subtitle_embed_var = ctk.BooleanVar(value=bool(self.config.subtitles.embed))
-        self.subtitle_embed_switch = ctk.ctk.CTkSwitch(
+        self.subtitle_embed_switch = ctk.CTkSwitch(
             self.subtitle_frame,
             text="Embed Subtitles",
             variable=self.subtitle_embed_var,
         )
         self.subtitle_embed_switch.pack(side="left", padx=(0, 10))
-        ctk.ctk.CTkLabel(self.subtitle_frame, text="Lang:").pack(side="left", padx=(0, 5))
+        ctk.CTkLabel(self.subtitle_frame, text="Lang:").pack(side="left", padx=(0, 5))
         subtitle_lang_default = ",".join(self.config.subtitles.languages or ["en"])
-        self.subtitle_lang_entry = ctk.ctk.CTkEntry(self.subtitle_frame, width=120)
+        self.subtitle_lang_entry = ctk.CTkEntry(self.subtitle_frame, width=120)
         self.subtitle_lang_entry.insert(0, subtitle_lang_default)
         self.subtitle_lang_entry.pack(side="left", padx=(0, 10))
 
         # Available formats label
-        self.available_label = ctk.ctk.CTkLabel(scroll, text="", text_color="gray", font=ctk.ctk.CTkFont(size=11))
+        self.available_label = ctk.CTkLabel(scroll, text="", text_color="gray", font=ctk.CTkFont(size=11))
         self.available_label.pack(fill="x", padx=20, pady=5)
         self.available_label.pack_forget()
 
         # Action buttons
         btn_frame = ctk.CTkFrame(scroll, fg_color="transparent")
         btn_frame.pack(fill="x", padx=20, pady=5)
-        self.download_btn = ctk.ctk.CTkButton(
+        self.download_btn = ctk.CTkButton(
             btn_frame, text="Download", width=120, command=self._start_download, state="disabled"
         )
         self.download_btn.pack(side="left", padx=(0, 10))
-        ctk.ctk.CTkButton(btn_frame, text="Batch Download", width=120, command=self._batch_download).pack(
+        ctk.CTkButton(btn_frame, text="Batch Download", width=120, command=self._batch_download).pack(
             side="left", padx=(0, 10)
         )
-        ctk.ctk.CTkButton(btn_frame, text="Queue Download", width=120, command=self._queue_download).pack(
+        ctk.CTkButton(btn_frame, text="Queue Download", width=120, command=self._queue_download).pack(
             side="left", padx=(0, 10)
         )
 
         # Status
-        self.status_label = ctk.ctk.CTkLabel(scroll, text="", text_color="gray", font=ctk.ctk.CTkFont(size=12))
+        self.status_label = ctk.CTkLabel(scroll, text="", text_color="gray", font=ctk.CTkFont(size=12))
         self.status_label.pack(fill="x", padx=20, pady=5)
 
         # Video info card
         self.info_frame = ctk.CTkFrame(scroll)
         self.info_frame.pack(fill="x", padx=20, pady=5)
         self.info_frame.pack_forget()
-        self.info_title = ctk.ctk.CTkLabel(
-            self.info_frame, text="", font=ctk.ctk.CTkFont(size=16, weight="bold"), anchor="w"
-        )
+        self.info_title = ctk.CTkLabel(self.info_frame, text="", font=ctk.CTkFont(size=16, weight="bold"), anchor="w")
         self.info_title.pack(fill="x", padx=10, pady=(10, 5))
-        self.info_details = ctk.ctk.CTkLabel(self.info_frame, text="", anchor="w", justify="left")
+        self.info_details = ctk.CTkLabel(self.info_frame, text="", anchor="w", justify="left")
         self.info_details.pack(fill="x", padx=10, pady=(0, 10))
 
         # Progress
-        self.progress = ctk.ctk.CTkProgressBar(scroll, width=500)
+        self.progress = ctk.CTkProgressBar(scroll, width=500)
         self.progress.pack(padx=20, pady=5)
         self.progress.set(0)
         self.progress.pack_forget()
-        self.progress_label = ctk.ctk.CTkLabel(scroll, text="", text_color="gray", font=ctk.ctk.CTkFont(size=12))
+        self.progress_label = ctk.CTkLabel(scroll, text="", text_color="gray", font=ctk.CTkFont(size=12))
         self.progress_label.pack(pady=5)
         self.progress_label.pack_forget()
-        self.speed_label = ctk.ctk.CTkLabel(scroll, text="", text_color="gray", font=ctk.ctk.CTkFont(size=12))
+        self.speed_label = ctk.CTkLabel(scroll, text="", text_color="gray", font=ctk.CTkFont(size=12))
         self.speed_label.pack(pady=5)
         self.speed_label.pack_forget()
-        self.cancel_btn = ctk.ctk.CTkButton(
+        self.cancel_btn = ctk.CTkButton(
             scroll, text="Cancel Download", width=120, fg_color="#E74C3C", command=self._cancel_download
         )
         self.cancel_btn.pack(pady=5)
@@ -541,7 +530,15 @@ class KyroApp(ctk.CTk):
                 "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "size": "unknown",
             }
-            self.archive.add(entry)
+            self.archive.add(
+                entry["task_id"],
+                entry["title"],
+                entry["url"],
+                "",
+                0,
+                0,
+                "gui",
+            )
         except Exception as e:
             logger.error(f"Failed to add archive entry: {e}")
 
@@ -700,22 +697,22 @@ class KyroApp(ctk.CTk):
             widget.destroy()
         plugins = self.manager.plugin_loader.list_plugins()
         if not plugins:
-            ctk.ctk.CTkLabel(plugin_frame, text="No plugins found").pack(pady=10)
+            ctk.CTkLabel(plugin_frame, text="No plugins found").pack(pady=10)
             return
         for plugin in plugins:
             row = ctk.CTkFrame(plugin_frame, fg_color="transparent")
             row.pack(fill="x", padx=10, pady=2)
             var = ctk.BooleanVar(value=plugin["enabled"])
-            switch = ctk.ctk.CTkSwitch(
+            switch = ctk.CTkSwitch(
                 row,
                 text=f"{plugin['name']} v{plugin['version']}",
                 variable=var,
                 command=lambda n=plugin["name"], v=var: self._toggle_plugin(n, v),
             )
             switch.pack(side="left")
-            ctk.ctk.CTkLabel(
-                row, text=plugin.get("description", ""), text_color="gray", font=ctk.ctk.CTkFont(size=10)
-            ).pack(side="left", padx=10)
+            ctk.CTkLabel(row, text=plugin.get("description", ""), text_color="gray", font=ctk.CTkFont(size=10)).pack(
+                side="left", padx=10
+            )
 
     def _toggle_plugin(self, name, var):
         if var.get():
@@ -727,14 +724,14 @@ class KyroApp(ctk.CTk):
         tab = self.tab_queue
         btn_frame = ctk.CTkFrame(tab, fg_color="transparent")
         btn_frame.pack(fill="x", padx=20, pady=10)
-        ctk.ctk.CTkButton(btn_frame, text="Start Queue", width=100, fg_color="#2ECC71", command=self._start_queue).pack(
+        ctk.CTkButton(btn_frame, text="Start Queue", width=100, fg_color="#2ECC71", command=self._start_queue).pack(
             side="right", padx=5
         )
-        ctk.ctk.CTkButton(btn_frame, text="Refresh", width=80, command=self._refresh_queue).pack(side="right", padx=5)
-        ctk.ctk.CTkButton(btn_frame, text="Clear Completed", width=120, command=self._clear_completed).pack(
+        ctk.CTkButton(btn_frame, text="Refresh", width=80, command=self._refresh_queue).pack(side="right", padx=5)
+        ctk.CTkButton(btn_frame, text="Clear Completed", width=120, command=self._clear_completed).pack(
             side="right", padx=5
         )
-        self.queue_text = ctk.ctk.CTkTextbox(tab, font=ctk.ctk.CTkFont(size=12))
+        self.queue_text = ctk.CTkTextbox(tab, font=ctk.CTkFont(size=12))
         self.queue_text.pack(fill="both", expand=True, padx=20, pady=5)
         self._refresh_queue()
 
@@ -777,9 +774,9 @@ class KyroApp(ctk.CTk):
         tab = self.tab_history
         btn_frame = ctk.CTkFrame(tab, fg_color="transparent")
         btn_frame.pack(fill="x", padx=20, pady=10)
-        ctk.ctk.CTkButton(btn_frame, text="Refresh", width=80, command=self._refresh_history).pack(side="right", padx=5)
-        ctk.ctk.CTkButton(btn_frame, text="Clear All", width=80, command=self._clear_history).pack(side="right", padx=5)
-        self.history_text = ctk.ctk.CTkTextbox(tab, font=ctk.ctk.CTkFont(size=12))
+        ctk.CTkButton(btn_frame, text="Refresh", width=80, command=self._refresh_history).pack(side="right", padx=5)
+        ctk.CTkButton(btn_frame, text="Clear All", width=80, command=self._clear_history).pack(side="right", padx=5)
+        self.history_text = ctk.CTkTextbox(tab, font=ctk.CTkFont(size=12))
         self.history_text.pack(fill="both", expand=True, padx=20, pady=5)
         self._refresh_history()
 
@@ -789,7 +786,7 @@ class KyroApp(ctk.CTk):
         if not entries:
             self.history_text.insert("1.0", "No download history")
             return
-        for entry in entries:
+        for _, entry in entries:
             self.history_text.insert("end", f"[{entry.get('status', '?')}] {entry.get('title', 'Unknown')}\n")
             self.history_text.insert(
                 "end", f"  Date: {entry.get('timestamp', '')[:19]} | Size: {entry.get('size', '?')}\n\n"
@@ -803,16 +800,16 @@ class KyroApp(ctk.CTk):
         tab = self.tab_search
         search_frame = ctk.CTkFrame(tab, fg_color="transparent")
         search_frame.pack(fill="x", padx=20, pady=10)
-        self.search_entry = ctk.ctk.CTkEntry(
-            search_frame, placeholder_text="Search query...", height=40, font=ctk.ctk.CTkFont(size=14)
+        self.search_entry = ctk.CTkEntry(
+            search_frame, placeholder_text="Search query...", height=40, font=ctk.CTkFont(size=14)
         )
         self.search_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
         self.search_entry.bind("<Return>", lambda e: self._do_search())
-        self.search_platform = ctk.ctk.CTkComboBox(search_frame, values=["youtube", "soundcloud"], width=120)
+        self.search_platform = ctk.CTkComboBox(search_frame, values=["youtube", "soundcloud"], width=120)
         self.search_platform.set("youtube")
         self.search_platform.pack(side="right", padx=(0, 10))
-        ctk.ctk.CTkButton(search_frame, text="Search", width=80, command=self._do_search).pack(side="right")
-        self.search_text = ctk.ctk.CTkTextbox(tab, font=ctk.ctk.CTkFont(size=12))
+        ctk.CTkButton(search_frame, text="Search", width=80, command=self._do_search).pack(side="right")
+        self.search_text = ctk.CTkTextbox(tab, font=ctk.CTkFont(size=12))
         self.search_text.pack(fill="both", expand=True, padx=20, pady=5)
         self.search_text.insert("1.0", "Enter a search query and press Search")
 
@@ -844,8 +841,8 @@ class KyroApp(ctk.CTk):
         tab = self.tab_stats
         btn_frame = ctk.CTkFrame(tab, fg_color="transparent")
         btn_frame.pack(fill="x", padx=20, pady=10)
-        ctk.ctk.CTkButton(btn_frame, text="Refresh", width=80, command=self._refresh_stats).pack(side="right", padx=5)
-        self.stats_text = ctk.ctk.CTkTextbox(tab, font=ctk.ctk.CTkFont(size=14))
+        ctk.CTkButton(btn_frame, text="Refresh", width=80, command=self._refresh_stats).pack(side="right", padx=5)
+        self.stats_text = ctk.CTkTextbox(tab, font=ctk.CTkFont(size=14))
         self.stats_text.pack(fill="both", expand=True, padx=20, pady=5)
         self._refresh_stats()
 
@@ -859,13 +856,9 @@ class KyroApp(ctk.CTk):
         tab = self.tab_schedule
         btn_frame = ctk.CTkFrame(tab, fg_color="transparent")
         btn_frame.pack(fill="x", padx=20, pady=10)
-        ctk.ctk.CTkButton(btn_frame, text="Add Schedule", width=120, command=self._add_schedule).pack(
-            side="right", padx=5
-        )
-        ctk.ctk.CTkButton(btn_frame, text="Refresh", width=80, command=self._refresh_schedule).pack(
-            side="right", padx=5
-        )
-        self.schedule_text = ctk.ctk.CTkTextbox(tab, font=ctk.ctk.CTkFont(size=12))
+        ctk.CTkButton(btn_frame, text="Add Schedule", width=120, command=self._add_schedule).pack(side="right", padx=5)
+        ctk.CTkButton(btn_frame, text="Refresh", width=80, command=self._refresh_schedule).pack(side="right", padx=5)
+        self.schedule_text = ctk.CTkTextbox(tab, font=ctk.CTkFont(size=12))
         self.schedule_text.pack(fill="both", expand=True, padx=20, pady=5)
         self._refresh_schedule()
 
@@ -904,58 +897,56 @@ class KyroApp(ctk.CTk):
         self._settings_scroll = ctk.CTkScrollableFrame(tab)
         self._settings_scroll.pack(fill="both", expand=True, padx=20, pady=10)
 
-        ctk.ctk.CTkLabel(self._settings_scroll, text="General", font=ctk.ctk.CTkFont(size=18, weight="bold")).pack(
+        ctk.CTkLabel(self._settings_scroll, text="General", font=ctk.CTkFont(size=18, weight="bold")).pack(
             anchor="w", pady=(10, 5)
         )
-        ctk.ctk.CTkLabel(self._settings_scroll, text="Download Path:").pack(anchor="w", pady=(5, 0))
-        self.settings_output = ctk.ctk.CTkEntry(self._settings_scroll, width=500)
+        ctk.CTkLabel(self._settings_scroll, text="Download Path:").pack(anchor="w", pady=(5, 0))
+        self.settings_output = ctk.CTkEntry(self._settings_scroll, width=500)
         self.settings_output.insert(0, self.config.general.output_path)
         self.settings_output.pack(anchor="w", pady=(0, 10))
 
-        ctk.ctk.CTkLabel(
-            self._settings_scroll, text="Download Settings", font=ctk.ctk.CTkFont(size=18, weight="bold")
-        ).pack(anchor="w", pady=(10, 5))
+        ctk.CTkLabel(self._settings_scroll, text="Download Settings", font=ctk.CTkFont(size=18, weight="bold")).pack(
+            anchor="w", pady=(10, 5)
+        )
         settings_grid = ctk.CTkFrame(self._settings_scroll, fg_color="transparent")
         settings_grid.pack(anchor="w", fill="x", pady=5)
-        ctk.ctk.CTkLabel(settings_grid, text="Max Retries:").grid(row=0, column=0, sticky="w", padx=(0, 10))
-        self.settings_retries = ctk.ctk.CTkEntry(settings_grid, width=80)
+        ctk.CTkLabel(settings_grid, text="Max Retries:").grid(row=0, column=0, sticky="w", padx=(0, 10))
+        self.settings_retries = ctk.CTkEntry(settings_grid, width=80)
         self.settings_retries.insert(0, str(self.config.download.max_retries))
         self.settings_retries.grid(row=0, column=1, padx=(0, 20))
-        ctk.ctk.CTkLabel(settings_grid, text="Workers:").grid(row=0, column=2, sticky="w", padx=(0, 10))
-        self.settings_workers = ctk.ctk.CTkEntry(settings_grid, width=80)
+        ctk.CTkLabel(settings_grid, text="Workers:").grid(row=0, column=2, sticky="w", padx=(0, 10))
+        self.settings_workers = ctk.CTkEntry(settings_grid, width=80)
         self.settings_workers.insert(0, str(self.config.download.concurrent_workers))
         self.settings_workers.grid(row=0, column=3, padx=(0, 20))
-        ctk.ctk.CTkLabel(settings_grid, text="Rate Limit:").grid(
-            row=1, column=0, sticky="w", padx=(0, 10), pady=(10, 0)
-        )
-        self.settings_rate = ctk.ctk.CTkEntry(settings_grid, width=120)
+        ctk.CTkLabel(settings_grid, text="Rate Limit:").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=(10, 0))
+        self.settings_rate = ctk.CTkEntry(settings_grid, width=120)
         self.settings_rate.insert(0, str(self.config.download.rate_limit or ""))
         self.settings_rate.grid(row=1, column=1, padx=(0, 20), pady=(10, 0))
 
-        ctk.ctk.CTkLabel(self._settings_scroll, text="Features", font=ctk.ctk.CTkFont(size=18, weight="bold")).pack(
+        ctk.CTkLabel(self._settings_scroll, text="Features", font=ctk.CTkFont(size=18, weight="bold")).pack(
             anchor="w", pady=(15, 5)
         )
         self.settings_notify_var = ctk.BooleanVar(value=self.config.general.notifications)
-        self.settings_notify = ctk.ctk.CTkSwitch(
+        self.settings_notify = ctk.CTkSwitch(
             self._settings_scroll, text="Desktop Notifications", variable=self.settings_notify_var
         )
         self.settings_notify.pack(anchor="w", pady=5)
         self.settings_autoupdate_var = ctk.BooleanVar(value=self.config.general.auto_update)
-        self.settings_autoupdate = ctk.ctk.CTkSwitch(
+        self.settings_autoupdate = ctk.CTkSwitch(
             self._settings_scroll, text="Auto-update yt-dlp", variable=self.settings_autoupdate_var
         )
         self.settings_autoupdate.pack(anchor="w", pady=5)
         self.settings_dedup_var = ctk.BooleanVar(value=self.config.general.check_duplicates)
-        self.settings_dedup = ctk.ctk.CTkSwitch(
+        self.settings_dedup = ctk.CTkSwitch(
             self._settings_scroll, text="Check Duplicates", variable=self.settings_dedup_var
         )
         self.settings_dedup.pack(anchor="w", pady=5)
 
-        ctk.ctk.CTkButton(self._settings_scroll, text="Save Settings", width=150, command=self._save_settings).pack(
+        ctk.CTkButton(self._settings_scroll, text="Save Settings", width=150, command=self._save_settings).pack(
             anchor="w", pady=(15, 10)
         )
 
-        ctk.ctk.CTkLabel(self._settings_scroll, text="Plugins", font=ctk.ctk.CTkFont(size=18, weight="bold")).pack(
+        ctk.CTkLabel(self._settings_scroll, text="Plugins", font=ctk.CTkFont(size=18, weight="bold")).pack(
             anchor="w", pady=(15, 5)
         )
         self.plugin_frame = ctk.CTkFrame(self._settings_scroll)

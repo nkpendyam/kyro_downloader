@@ -1,4 +1,5 @@
 """REST API routes for Kyro Downloader."""
+
 import threading
 import concurrent.futures
 from pathlib import Path
@@ -26,6 +27,7 @@ _executor_started = threading.Event()
 # Sensitive config fields to redact from API responses
 _SENSITIVE_FIELDS = {"proxy", "cookies_file", "credentials_file", "token", "api_token", "password", "secret"}
 
+
 def _redact_config(config_dict):
     """Remove sensitive fields from config before returning via API."""
     redacted = {}
@@ -38,6 +40,7 @@ def _redact_config(config_dict):
                 redacted[section][key] = value
     return redacted
 
+
 def _safe_output_path(path, base_path):
     """Validate output path stays within allowed directory."""
     resolved = Path(path).resolve()
@@ -48,6 +51,7 @@ def _safe_output_path(path, base_path):
         raise HTTPException(status_code=403, detail="Output path must be within download directory")
     return resolved
 
+
 def get_manager():
     global _manager_instance, _config_instance
     if _manager_instance is None:
@@ -57,10 +61,14 @@ def get_manager():
                 _manager_instance = DownloadManager(_config_instance.model_dump())
     return _manager_instance
 
+
 def get_config():
-    global _config_instance
-    if _config_instance is None:
-        get_manager()
+    global _config_instance, _manager_instance
+    with _manager_lock:
+        if _config_instance is None:
+            _config_instance = load_config()
+            if _manager_instance is None:
+                _manager_instance = DownloadManager(_config_instance.model_dump())
     return _config_instance
 
 
@@ -86,6 +94,7 @@ async def require_api_auth(
     if supplied_token != configured_token:
         raise HTTPException(status_code=401, detail="Unauthorized", headers={"WWW-Authenticate": "Bearer"})
 
+
 def _ensure_executor_running():
     if not _executor_started.is_set():
         with _manager_lock:
@@ -93,6 +102,7 @@ def _ensure_executor_running():
                 manager = get_manager()
                 _executor.submit(manager.execute)
                 _executor_started.set()
+
 
 class DownloadRequest(BaseModel):
     url: str = Field(max_length=2048)
@@ -110,6 +120,7 @@ class DownloadRequest(BaseModel):
     sponsorblock: bool = False
     preset: str = "none"
     output_template: Optional[str] = Field(default=None, max_length=256)
+
 
 class BatchRequest(BaseModel):
     urls: list[str] = Field(min_length=1, max_length=100)
@@ -136,6 +147,7 @@ class BatchRequest(BaseModel):
                 raise ValueError(f"Invalid URL in batch request: {raw_url}")
             normalized_urls.append(url)
         return normalized_urls
+
 
 class PlaylistRequest(BaseModel):
     url: str = Field(max_length=2048)
@@ -187,10 +199,12 @@ def _resolve_subtitles_request(subtitles):
         }
     return None
 
+
 class ConfigUpdate(BaseModel):
     section: str = Field(max_length=64)
     key: str = Field(max_length=64)
     value: str = Field(max_length=1024)
+
 
 @router.post("/download")
 async def queue_download(req: DownloadRequest):
@@ -202,7 +216,12 @@ async def queue_download(req: DownloadRequest):
     output_base = cfg.general.output_path
     output = validate_output_path(req.output_path or output_base)
     _safe_output_path(output, output_base)
-    priority_map = {"low": Priority.LOW, "normal": Priority.NORMAL, "high": Priority.HIGH, "critical": Priority.CRITICAL}
+    priority_map = {
+        "low": Priority.LOW,
+        "normal": Priority.NORMAL,
+        "high": Priority.HIGH,
+        "critical": Priority.CRITICAL,
+    }
     priority = priority_map.get(req.priority, Priority.NORMAL)
     only_audio, audio_format, audio_quality, subtitles_cfg, output_template = _resolve_download_profile(req)
     sponsorblock_cfg = {"enabled": True} if req.sponsorblock else None
@@ -223,7 +242,13 @@ async def queue_download(req: DownloadRequest):
         output_template=output_template,
     )
     _ensure_executor_running()
-    return {"task_id": item.task_id, "url": item.url, "status": item.status.value, "message": "Download queued successfully"}
+    return {
+        "task_id": item.task_id,
+        "url": item.url,
+        "status": item.status.value,
+        "message": "Download queued successfully",
+    }
+
 
 @router.post("/batch")
 async def batch_download(req: BatchRequest):
@@ -255,6 +280,7 @@ async def batch_download(req: BatchRequest):
     _ensure_executor_running()
     return {"queued": len(items), "items": items}
 
+
 @router.post("/playlist")
 async def download_playlist_req(req: PlaylistRequest):
     url = normalize_url(req.url)
@@ -285,9 +311,11 @@ async def download_playlist_req(req: PlaylistRequest):
     )
     return {"message": "Playlist download started in background"}
 
+
 @router.get("/status")
 async def get_status():
     return get_manager().get_status()
+
 
 @router.get("/status/{task_id}")
 async def get_task_status(task_id: str):
@@ -304,13 +332,17 @@ async def get_task_status(task_id: str):
             "percentage": progress.percentage if progress else 0,
             "speed": progress.speed if progress else 0,
             "eta": progress.eta if progress else 0,
-        } if progress else None,
+        }
+        if progress
+        else None,
     }
+
 
 @router.get("/queue")
 async def get_queue():
     items = get_manager().queue.get_all_items()
     return [{"task_id": i.task_id, "url": i.url, "status": i.status.value, "priority": i.priority.name} for i in items]
+
 
 @router.post("/queue/{task_id}/pause")
 async def pause_task(task_id: str):
@@ -318,11 +350,13 @@ async def pause_task(task_id: str):
         return {"message": "Task paused"}
     raise HTTPException(status_code=404, detail="Task not found or cannot be paused")
 
+
 @router.post("/queue/{task_id}/resume")
 async def resume_task(task_id: str):
     if get_manager().queue.resume(task_id):
         return {"message": "Task resumed"}
     raise HTTPException(status_code=404, detail="Task not found or cannot be resumed")
+
 
 @router.delete("/queue/{task_id}")
 async def cancel_task(task_id: str):
@@ -330,6 +364,7 @@ async def cancel_task(task_id: str):
     if manager.queue.cancel(task_id) or manager.queue.remove(task_id):
         return {"message": "Task cancelled"}
     raise HTTPException(status_code=404, detail="Task not found")
+
 
 @router.get("/info")
 async def get_video_info_endpoint(url: str):
@@ -356,14 +391,18 @@ async def get_video_info_endpoint(url: str):
         ],
     }
 
+
 @router.get("/platforms")
 async def list_platforms():
     from src.utils.platform import get_supported_platforms
+
     return get_supported_platforms()
+
 
 @router.get("/config")
 async def get_config_endpoint():
     return _redact_config(get_config().model_dump())
+
 
 @router.put("/config")
 async def update_config(req: ConfigUpdate):
@@ -381,16 +420,16 @@ async def update_config(req: ConfigUpdate):
                     value = float(value)
                 except ValueError:
                     pass
-        global _config_instance
-        current = _config_instance.model_dump() if _config_instance else load_config().model_dump()
-        if section in current and key in current[section]:
-            current[section][key] = value
-            from src.config.schema import AppConfig
-            _config_instance = AppConfig(**current)
-            with _manager_lock:
-                global _manager_instance
+        with _manager_lock:
+            global _config_instance, _manager_instance
+            current = _config_instance.model_dump() if _config_instance else load_config().model_dump()
+            if section in current and key in current[section]:
+                current[section][key] = value
+                from src.config.schema import AppConfig
+
+                _config_instance = AppConfig(**current)
                 _manager_instance = DownloadManager(_config_instance.model_dump())
-            return {"message": f"Updated {section}.{key} = {value}"}
+                return {"message": f"Updated {section}.{key} = {value}"}
         raise HTTPException(status_code=400, detail="Invalid config key")
     except HTTPException:
         raise

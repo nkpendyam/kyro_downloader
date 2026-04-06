@@ -30,10 +30,16 @@ from src.services.subtitles import get_available_subtitles
 
 def _load_cmd(name):
     path = pathlib.Path(__file__).parent / "commands" / f"{name}.py"
-    spec = importlib.util.spec_from_file_location(f"cmd_{name}", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    try:
+        spec = importlib.util.spec_from_file_location(f"cmd_{name}", path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Unable to create import spec for {path}")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception as e:
+        print(f"[bold yellow]Warning: Failed to load command module {name}: {e}[/bold yellow]")
+        return None
 
 
 _cmd_stats = _load_cmd("stats")
@@ -48,6 +54,10 @@ _cmd_chapters = _load_cmd("chapters")
 _cmd_external = _load_cmd("external")
 
 console = Console()
+
+
+def _command_module_missing(name: str) -> None:
+    print(f"[bold red]{name} module not available[/bold red]")
 
 
 def _supports_text(value: str) -> bool:
@@ -65,6 +75,17 @@ def _format_platform_label(platform: dict) -> str:
     if icon and _supports_text(icon):
         return f"{icon} {name}"
     return name
+
+
+def _safe_console_text(value: object) -> str:
+    """Return text that can be encoded by current stdout encoding."""
+    text = str(value)
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        text.encode(encoding)
+        return text
+    except Exception:
+        return text.encode(encoding, errors="replace").decode(encoding, errors="replace")
 
 
 def _is_dry_run(args: argparse.Namespace) -> bool:
@@ -553,8 +574,8 @@ def cmd_platforms(args, config):
     table.add_column("Max Quality", style="blue")
     for p in platforms:
         table.add_row(
-            p["name"],
-            p.get("icon", ""),
+            _safe_console_text(p["name"]),
+            _safe_console_text(p.get("icon", "")),
             "Yes" if p.get("supports_video") else "No",
             "Yes" if p.get("supports_audio") else "No",
             "Yes" if p.get("supports_live") else "No",
@@ -868,41 +889,82 @@ def main():
         "info": cmd_info,
         "i": cmd_info,
         "platforms": cmd_platforms,
-        "stats": lambda a, c: _cmd_stats.show_stats(),
+        "stats": lambda a, c: (
+            _cmd_stats.show_stats()
+            if _cmd_stats and hasattr(_cmd_stats, "show_stats")
+            else _command_module_missing("Stats")
+        ),
         "archive": lambda a, c: (
-            _cmd_archive.clear_archive() if getattr(a, "clear", False) else _cmd_archive.show_archive()
+            (_cmd_archive.clear_archive() if getattr(a, "clear", False) else _cmd_archive.show_archive())
+            if _cmd_archive and hasattr(_cmd_archive, "clear_archive") and hasattr(_cmd_archive, "show_archive")
+            else _command_module_missing("Archive")
         ),
         "convert": lambda a, c: (
-            _cmd_convert.convert_batch(a.batch, a.format, remove_original=a.remove_original)
-            if a.batch
-            else _cmd_convert.convert_single(a.input, a.format, remove_original=a.remove_original)
+            (
+                _cmd_convert.convert_batch(a.batch, a.format, remove_original=a.remove_original)
+                if a.batch
+                else _cmd_convert.convert_single(a.input, a.format, remove_original=a.remove_original)
+            )
+            if _cmd_convert and hasattr(_cmd_convert, "convert_batch") and hasattr(_cmd_convert, "convert_single")
+            else _command_module_missing("Convert")
         ),
         "compress": lambda a, c: (
-            _cmd_compress.compress_batch(a.batch, a.quality, remove_original=a.remove_original)
-            if a.batch
-            else _cmd_compress.compress_single(a.input, a.quality, remove_original=a.remove_original)
+            (
+                _cmd_compress.compress_batch(a.batch, a.quality, remove_original=a.remove_original)
+                if a.batch
+                else _cmd_compress.compress_single(a.input, a.quality, remove_original=a.remove_original)
+            )
+            if _cmd_compress and hasattr(_cmd_compress, "compress_batch") and hasattr(_cmd_compress, "compress_single")
+            else _command_module_missing("Compress")
         ),
         "schedule": lambda a, c: (
-            _cmd_schedule.add_schedule(a.url, a.time, repeat=a.repeat)
-            if a.action == "add"
-            else (_cmd_schedule.remove_schedule(a.id) if a.action == "remove" else _cmd_schedule.list_schedules())
+            (
+                _cmd_schedule.add_schedule(a.url, a.time, repeat=a.repeat)
+                if a.action == "add"
+                else (_cmd_schedule.remove_schedule(a.id) if a.action == "remove" else _cmd_schedule.list_schedules())
+            )
+            if _cmd_schedule
+            and hasattr(_cmd_schedule, "add_schedule")
+            and hasattr(_cmd_schedule, "remove_schedule")
+            and hasattr(_cmd_schedule, "list_schedules")
+            else _command_module_missing("Schedule")
         ),
-        "search": lambda a, c: _cmd_search.search(a.query, a.platform, a.max_results),
-        "channel": lambda a, c: _cmd_channels.channel_info(a.url),
+        "search": lambda a, c: (
+            _cmd_search.search(a.query, a.platform, a.max_results)
+            if _cmd_search and hasattr(_cmd_search, "search")
+            else _command_module_missing("Search")
+        ),
+        "channel": lambda a, c: (
+            _cmd_channels.channel_info(a.url)
+            if _cmd_channels and hasattr(_cmd_channels, "channel_info")
+            else _command_module_missing("Channel")
+        ),
         "livestream": lambda a, c: (
-            _cmd_livestream.livestream_record(a.url, getattr(a, "output", None) or c.general.output_path, a.timeout)
-            if a.record
-            else _cmd_livestream.livestream_download(a.url, getattr(a, "output", None) or c.general.output_path)
+            (
+                _cmd_livestream.livestream_record(a.url, getattr(a, "output", None) or c.general.output_path, a.timeout)
+                if a.record
+                else _cmd_livestream.livestream_download(a.url, getattr(a, "output", None) or c.general.output_path)
+            )
+            if _cmd_livestream
+            and hasattr(_cmd_livestream, "livestream_record")
+            and hasattr(_cmd_livestream, "livestream_download")
+            else _command_module_missing("Livestream")
         ),
         "chapters": lambda a, c: (
-            _cmd_chapters.split_chapters(
-                a.input, getattr(a, "split", None) or getattr(a, "output", None) or c.general.output_path
+            (
+                _cmd_chapters.split_chapters(
+                    a.input, getattr(a, "split", None) or getattr(a, "output", None) or c.general.output_path
+                )
+                if getattr(a, "split", None)
+                else _cmd_chapters.show_chapters(a.input)
             )
-            if getattr(a, "split", None)
-            else _cmd_chapters.show_chapters(a.input)
+            if _cmd_chapters and hasattr(_cmd_chapters, "split_chapters") and hasattr(_cmd_chapters, "show_chapters")
+            else _command_module_missing("Chapters")
         ),
-        "external": lambda a, c: _cmd_external.external_download(
-            a.url, c.general.output_path, a.connections, getattr(a, "rate_limit", None)
+        "external": lambda a, c: (
+            _cmd_external.external_download(a.url, c.general.output_path, a.connections, getattr(a, "rate_limit", None))
+            if _cmd_external and hasattr(_cmd_external, "external_download")
+            else _command_module_missing("External")
         ),
         "plugins": lambda a, c: cmd_plugins(a, c),
         "tui": lambda a, c: _launch_tui(),

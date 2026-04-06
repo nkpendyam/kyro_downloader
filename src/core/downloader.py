@@ -1,4 +1,5 @@
 """Core yt-dlp wrapper with error handling and post-processing."""
+
 import os
 import platform
 import time
@@ -18,13 +19,16 @@ ProgressHook = Callable[[dict[str, Any]], None]
 def _retry_sleep(n: int) -> int:
     return min(2**n, 30)
 
+
 logger: Any = get_logger(__name__)
+
 
 class DownloadError(Exception):
     def __init__(self, message: str, url: str = "", error_code: int | None = None) -> None:
         super().__init__(message)
         self.url = url
         self.error_code = error_code
+
 
 class VideoInfo:
     def __init__(self, info: dict[str, Any]) -> None:
@@ -65,6 +69,7 @@ class VideoInfo:
         if self.view_count >= 1_000:
             return f"{self.view_count / 1_000:.1f}K"
         return str(int(float(self.view_count)))
+
 
 def analyze_available_formats(formats: list[FormatDict]) -> dict[str, Any]:
     """Analyze all available formats and return smart labels."""
@@ -164,9 +169,7 @@ def analyze_available_formats(formats: list[FormatDict]) -> dict[str, Any]:
         elif stream.get("format_id") and not existing.get("format_id"):
             deduped_streams[key] = stream
 
-    sorted_streams = sorted(
-        deduped_streams.values(), key=lambda s: s.get("abr", 0), reverse=True
-    )
+    sorted_streams = sorted(deduped_streams.values(), key=lambda s: s.get("abr", 0), reverse=True)
 
     return {
         "available_qualities": sorted(heights, reverse=True),
@@ -177,10 +180,21 @@ def analyze_available_formats(formats: list[FormatDict]) -> dict[str, Any]:
         "audio_streams": sorted_streams,
     }
 
+
 def build_quality_labels(analysis: dict[str, Any]) -> list[str]:
     """Build user-friendly quality labels based on what's actually available."""
     labels: list[str] = []
-    height_map = {8000: "8K", 4320: "8K", 2160: "4K", 1080: "1080p", 720: "720p", 480: "480p", 360: "360p", 240: "240p", 144: "144p"}
+    height_map = {
+        8000: "8K",
+        4320: "8K",
+        2160: "4K",
+        1080: "1080p",
+        720: "720p",
+        480: "480p",
+        360: "360p",
+        240: "240p",
+        144: "144p",
+    }
     for h in analysis["available_qualities"]:
         label = height_map.get(h, f"{h}p")
         if h >= 1080 and analysis["has_hdr"]:
@@ -253,6 +267,7 @@ def build_smart_audio_options(analysis: dict[str, Any] | None) -> list[dict[str,
 
     return options
 
+
 AUDIO_QUALITY_PRESETS = {
     "64 kbps (Voice)": {"abr": "64", "format": "mp3", "description": "Voice only, smallest size"},
     "96 kbps (Low)": {"abr": "96", "format": "mp3", "description": "Podcasts, speech"},
@@ -267,7 +282,10 @@ AUDIO_QUALITY_PRESETS = {
     "Uncompressed (WAV)": {"abr": "0", "format": "wav", "description": "Raw PCM, huge files"},
 }
 
-def get_video_info(url: str, cookies_file: str | None = None, cookies_from_browser: str | None = None, proxy: str | None = None) -> VideoInfo:
+
+def get_video_info(
+    url: str, cookies_file: str | None = None, cookies_from_browser: str | None = None, proxy: str | None = None
+) -> VideoInfo:
     if not validate_url(url):
         raise DownloadError(f"Invalid URL: {url}", url=url)
     ydl_opts: dict[str, Any] = {"quiet": True, "no_warnings": True, "skip_download": True, "extract_flat": False}
@@ -286,6 +304,7 @@ def get_video_info(url: str, cookies_file: str | None = None, cookies_from_brows
             raise DownloadError(str(e), url=url) from e
         raise DownloadError(f"Failed to extract info: {e}", url=url) from e
 
+
 def list_video_formats(formats: list[FormatDict]) -> list[FormatDict]:
     if not formats:
         return []
@@ -295,6 +314,7 @@ def list_video_formats(formats: list[FormatDict]) -> list[FormatDict]:
     indexed.sort(key=lambda f: f.get("height") or 0, reverse=True)
     return indexed
 
+
 def list_audio_formats(formats: list[FormatDict]) -> list[FormatDict]:
     if not formats:
         return []
@@ -303,6 +323,7 @@ def list_audio_formats(formats: list[FormatDict]) -> list[FormatDict]:
         indexed = [f for f in formats if f.get("acodec") != "none"]
     indexed.sort(key=lambda f: f.get("abr") or 0, reverse=True)
     return indexed
+
 
 def build_ydl_opts(
     output_path: str,
@@ -341,14 +362,21 @@ def build_ydl_opts(
     else:
         outtmpl = os.path.join(output_path, "%(title)s.%(ext)s")
     if only_audio:
-        postprocessors.append({"key": "FFmpegExtractAudio", "preferredcodec": audio_format, "preferredquality": audio_quality})
+        postprocessors.append(
+            {"key": "FFmpegExtractAudio", "preferredcodec": audio_format, "preferredquality": audio_quality}
+        )
     if embed_thumbnail and thumbnail_supported:
         postprocessors.append({"key": "EmbedThumbnail", "already_have_thumbnail": False})
     if embed_metadata:
         postprocessors.append({"key": "FFmpegMetadata", "add_metadata": True})
     ydl_opts_subs: dict[str, Any] = {}
     if subtitles and subtitles.get("enabled"):
-        ydl_opts_subs = {"writesubtitles": True, "writeautomaticsub": subtitles.get("auto_generated", True), "subtitleslangs": subtitles.get("languages", ["en"]), "subtitlesformat": subtitles.get("format", "srt")}
+        ydl_opts_subs = {
+            "writesubtitles": True,
+            "writeautomaticsub": subtitles.get("auto_generated", True),
+            "subtitleslangs": subtitles.get("languages", ["en"]),
+            "subtitlesformat": subtitles.get("format", "srt"),
+        }
         if subtitles.get("embed"):
             postprocessors.append({"key": "FFmpegEmbedSubtitle"})
     ydl_opts: dict[str, Any] = {
@@ -376,9 +404,13 @@ def build_ydl_opts(
         if format_id:
             ydl_opts["format"] = f"{format_id}+bestaudio/best"
         elif hdr:
-            ydl_opts["format"] = "bestvideo[vcodec^=av01][height>=1080]+bestvideo[vcodec^=vp9][height>=1080]+bestaudio/best[ext=m4a]/best"
+            ydl_opts["format"] = (
+                "bestvideo[vcodec^=av01][height>=1080]+bestvideo[vcodec^=vp9][height>=1080]+bestaudio/best[ext=m4a]/best"
+            )
         elif dolby:
-            ydl_opts["format"] = "bestvideo+bestaudio[acodec^=ec-3]/bestvideo+bestaudio[acodec^=ac-3]/bestvideo+bestaudio/best"
+            ydl_opts["format"] = (
+                "bestvideo+bestaudio[acodec^=ec-3]/bestvideo+bestaudio[acodec^=ac-3]/bestvideo+bestaudio/best"
+            )
         else:
             ydl_opts["format"] = f"bestvideo[ext={prefer_format}]+bestaudio/best[ext=m4a]/best"
         ydl_opts["merge_output_format"] = prefer_format
@@ -408,6 +440,7 @@ def build_ydl_opts(
             ydl_opts["playliststart"] = playlist_config["playlist_start"]
     return ydl_opts
 
+
 @retry(max_attempts=3, base_delay=5.0, backoff="exponential")
 def download_single(
     url: str,
@@ -424,14 +457,27 @@ def download_single(
     if hook is None and progress_tracker and task_id:
         hook = cast(ProgressHook, create_progress_hook(progress_tracker, task_id))
     ydl_opts = build_ydl_opts(
-        output_path=output_path, format_id=format_id, only_audio=only_audio,
-        audio_format=cfg.get("audio_format", "mp3"), audio_quality=cfg.get("audio_quality", "192"), audio_selector=cfg.get("audio_selector"),
-        embed_thumbnail=cfg.get("embed_thumbnail", True), embed_metadata=cfg.get("embed_metadata", True),
-        subtitles=cfg.get("subtitles"), sponsorblock=cfg.get("sponsorblock"),
-        rate_limit=cfg.get("rate_limit"), proxy=cfg.get("proxy"), cookies_file=cfg.get("cookies_file"), cookies_from_browser=cfg.get("cookies_from_browser"),
-        progress_hook=hook, prefer_format=cfg.get("prefer_format", "mp4"),
-        fragment_retries=cfg.get("fragment_retries", 10), concurrent_fragments=cfg.get("concurrent_fragments", 4),
-        hdr=cfg.get("hdr", False), dolby=cfg.get("dolby", False), output_template=cfg.get("output_template"),
+        output_path=output_path,
+        format_id=format_id,
+        only_audio=only_audio,
+        audio_format=cfg.get("audio_format", "mp3"),
+        audio_quality=cfg.get("audio_quality", "192"),
+        audio_selector=cfg.get("audio_selector"),
+        embed_thumbnail=cfg.get("embed_thumbnail", True),
+        embed_metadata=cfg.get("embed_metadata", True),
+        subtitles=cfg.get("subtitles"),
+        sponsorblock=cfg.get("sponsorblock"),
+        rate_limit=cfg.get("rate_limit"),
+        proxy=cfg.get("proxy"),
+        cookies_file=cfg.get("cookies_file"),
+        cookies_from_browser=cfg.get("cookies_from_browser"),
+        progress_hook=hook,
+        prefer_format=cfg.get("prefer_format", "mp4"),
+        fragment_retries=cfg.get("fragment_retries", 10),
+        concurrent_fragments=cfg.get("concurrent_fragments", 4),
+        hdr=cfg.get("hdr", False),
+        dolby=cfg.get("dolby", False),
+        output_template=cfg.get("output_template"),
     )
     try:
         with yt_dlp.YoutubeDL(cast(Any, ydl_opts)) as ydl:
@@ -445,13 +491,7 @@ def download_single(
             logger.info(f"Download complete (postprocessor rename skipped): {url}")
             return output_path
         raise DownloadError(f"Download failed: {e}", url=url) from e
-    except Exception as e:
-        if "DownloadError" in type(e).__name__:
-            raise DownloadError(str(e), url=url) from e
-        if "FileNotFoundError" in type(e).__name__ and os.path.exists(output_path):
-            logger.info(f"Download complete (postprocessor rename skipped): {url}")
-            return output_path
-        raise DownloadError(f"Download failed: {e}", url=url) from e
+
 
 @retry(max_attempts=3, base_delay=5.0, backoff="exponential")
 def download_playlist(
@@ -465,13 +505,26 @@ def download_playlist(
     cfg: ConfigDict = config or {}
     playlist_cfg = cfg.get("playlist", {})
     ydl_opts = build_ydl_opts(
-        output_path=output_path, format_id=format_id, only_audio=only_audio,
-        audio_format=cfg.get("audio_format", "mp3"), audio_quality=cfg.get("audio_quality", "192"), audio_selector=cfg.get("audio_selector"),
-        embed_thumbnail=cfg.get("embed_thumbnail", True), embed_metadata=cfg.get("embed_metadata", True),
-        subtitles=cfg.get("subtitles"), sponsorblock=cfg.get("sponsorblock"),
-        rate_limit=cfg.get("rate_limit"), proxy=cfg.get("proxy"), cookies_file=cfg.get("cookies_file"), cookies_from_browser=cfg.get("cookies_from_browser"),
-        playlist=True, playlist_config=playlist_cfg, prefer_format=cfg.get("prefer_format", "mp4"),
-        hdr=cfg.get("hdr", False), dolby=cfg.get("dolby", False), output_template=cfg.get("output_template"),
+        output_path=output_path,
+        format_id=format_id,
+        only_audio=only_audio,
+        audio_format=cfg.get("audio_format", "mp3"),
+        audio_quality=cfg.get("audio_quality", "192"),
+        audio_selector=cfg.get("audio_selector"),
+        embed_thumbnail=cfg.get("embed_thumbnail", True),
+        embed_metadata=cfg.get("embed_metadata", True),
+        subtitles=cfg.get("subtitles"),
+        sponsorblock=cfg.get("sponsorblock"),
+        rate_limit=cfg.get("rate_limit"),
+        proxy=cfg.get("proxy"),
+        cookies_file=cfg.get("cookies_file"),
+        cookies_from_browser=cfg.get("cookies_from_browser"),
+        playlist=True,
+        playlist_config=playlist_cfg,
+        prefer_format=cfg.get("prefer_format", "mp4"),
+        hdr=cfg.get("hdr", False),
+        dolby=cfg.get("dolby", False),
+        output_template=cfg.get("output_template"),
     )
     try:
         with yt_dlp.YoutubeDL(cast(Any, ydl_opts)) as ydl:
