@@ -8,7 +8,15 @@ import threading
 from pathlib import Path
 from datetime import datetime, timedelta
 from datetime import timezone
-from dateutil.relativedelta import relativedelta
+
+try:
+    from dateutil.relativedelta import relativedelta  # type: ignore[import-not-found]
+
+    _HAS_DATEUTIL = True
+except ImportError:
+    _HAS_DATEUTIL = False
+    relativedelta = None  # type: ignore[misc,assignment]
+
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -132,7 +140,10 @@ class DownloadScheduler:
         elif repeat == "weekly":
             return (base + timedelta(weeks=1)).isoformat()
         elif repeat == "monthly":
-            return (base + relativedelta(months=1)).isoformat()
+            if _HAS_DATEUTIL and relativedelta is not None:
+                return (base + relativedelta(months=1)).isoformat()
+            # Fallback: approximate 30 days when dateutil is missing
+            return (base + timedelta(days=30)).isoformat()
         return base_time
 
     def run_due_schedules(self, callback: Any | None = None) -> int:
